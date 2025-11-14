@@ -156,6 +156,7 @@ public class PushMfaRegisterRequiredAction implements RequiredActionProvider, Re
                 nonceBytes,
                 PushChallenge.Type.ENROLLMENT,
                 PushMfaConstants.CHALLENGE_TTL,
+                null,
                 null);
             authSession.setAuthNote(PushMfaConstants.ENROLL_CHALLENGE_NOTE, challenge.getId());
         }

@@ -151,7 +151,8 @@ public class PushMfaResource {
             .map(challenge -> new LoginChallenge(
                 user.getId(),
                 challenge.getId(),
-                challenge.getExpiresAt()))
+                challenge.getExpiresAt(),
+                challenge.getClientId()))
             .toList();
         return Response.ok(Map.of("challenges", pending)).build();
     }
@@ -302,7 +303,8 @@ public class PushMfaResource {
 
     record LoginChallenge(@JsonProperty("userId") String userId,
                           @JsonProperty("cid") String cid,
-                          @JsonProperty("expiresAt") Instant expiresAt) {
+                          @JsonProperty("expiresAt") Instant expiresAt,
+                          @JsonProperty("clientId") String clientId) {
     }
 
     record ChallengeRespondRequest(@JsonProperty("token") String token,
