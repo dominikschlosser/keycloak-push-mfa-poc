@@ -11,55 +11,59 @@
                 align-items: flex-start;
                 margin-top: 1.5rem;
             }
+
             .kc-push-register-card {
                 flex: 1 1 280px;
-                background: var(--pf-global--BackgroundColor--100, #fff);
-                border: 1px solid var(--pf-global--BorderColor--100, #d2d2d2);
+                background: var(--pf-v5-global--BackgroundColor--100, #fff);
+                border: 1px solid var(--pf-v5-global--BorderColor--100, #d2d2d2);
                 border-radius: 4px;
                 padding: 1.25rem;
                 box-shadow: var(--pf-global--BoxShadow--md, 0 1px 2px rgba(0, 0, 0, 0.1));
             }
+
             .kc-push-register-token-group {
                 display: flex;
                 flex-direction: column;
                 gap: 0.75rem;
             }
+
             .kc-push-register-token {
-                background: var(--pf-global--BackgroundColor--200, #f5f5f5);
-                border: 1px solid var(--pf-global--BorderColor--200, #c7c7c7);
+                background: var(--pf-v5-global--BackgroundColor--200, #f5f5f5);
+                border: 1px solid var(--pf-v5-global--BorderColor--200, #c7c7c7);
                 border-radius: 4px;
                 padding: 1rem;
                 font-family: var(--pf-global--FontFamily--monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace);
+                color: var(--pf-v5-global--Color--200, #6a6e73);
                 font-size: 0.9rem;
                 max-height: 240px;
                 overflow-y: auto;
                 white-space: pre-wrap;
                 word-break: break-word;
             }
+
             .kc-push-register-actions {
                 display: flex;
                 flex-wrap: wrap;
                 gap: 0.75rem;
             }
+
             .kc-push-register__hint {
                 margin-top: 0.5rem;
-                color: var(--pf-global--Color--200, #6a6e73);
+                color: var(--pf-v5-global--Color--200, #6a6e73);
                 font-size: 0.9rem;
             }
+
             .kc-push-register-qr {
                 display: flex;
                 align-items: center;
                 justify-content: center;
                 min-height: 240px;
                 padding: 0.5rem;
-                background: var(--pf-global--BackgroundColor--200, #f5f5f5);
-                border: 1px dashed var(--pf-global--BorderColor--200, #c7c7c7);
+                background: var(--pf-v5-global--BackgroundColor--200, #f5f5f5);
+                border: 1px dashed var(--pf-v5-global--BorderColor--200, #c7c7c7);
                 border-radius: 4px;
             }
-            .kc-push-register-copy.copied {
-                background: var(--pf-global--BackgroundColor--success, #3e8635);
-                color: #fff;
-            }
+
             @media (max-width: 680px) {
                 .kc-push-register-card {
                     flex-basis: 100%;
@@ -104,14 +108,17 @@
             </div>
 
             <form id="kc-push-register-form" class="kc-push-register-actions" action="${url.loginAction}" method="post">
-                <button class="${properties.kcButtonClass!} ${properties.kcButtonPrimaryClass!}" type="submit" name="confirm" value="true">
+                <button class="${properties.kcButtonClass!} ${properties.kcButtonPrimaryClass!}" type="submit"
+                        name="confirm" value="true">
                     ${msg("push-mfa-register-confirm")!"I've enrolled"}
                 </button>
-                <button class="${properties.kcButtonClass!} ${properties.kcButtonSecondaryClass!}" type="submit" name="refresh" value="true">
+                <button class="${properties.kcButtonClass!} ${properties.kcButtonSecondaryClass!}" type="submit"
+                        name="refresh" value="true">
                     ${msg("push-mfa-register-refresh")!"Generate new QR"}
                 </button>
             </form>
-            <form id="kc-push-register-poll" action="${url.loginAction}" method="post" style="display:none" aria-hidden="true">
+            <form id="kc-push-register-poll" action="${url.loginAction}" method="post" style="display:none"
+                  aria-hidden="true">
                 <input type="hidden" name="check" value="true"/>
             </form>
         </div>
@@ -120,50 +127,29 @@
         <script src="${url.resourcesPath}/js/push-mfa.js"></script>
         <script>
             (function () {
-                var button = document.getElementById('kc-push-copy-token');
-                var tokenElement = document.getElementById('kc-push-token');
+                const button = document.getElementById('kc-push-copy-token');
+                const tokenElement = document.getElementById('kc-push-token');
                 if (!button || !tokenElement) {
                     return;
                 }
-                var defaultLabel = button.dataset.defaultLabel || button.textContent || '';
-                var successLabel = button.dataset.successLabel || defaultLabel;
-                button.addEventListener('click', function () {
-                    var value = (tokenElement.textContent || '').trim();
+                const defaultLabel = button.dataset.defaultLabel || button.textContent || '';
+                const successLabel = button.dataset.successLabel || defaultLabel;
+                button.addEventListener('click', () => {
+                    const value = (tokenElement.textContent || '').trim();
                     if (!value) {
                         return;
                     }
-                    function fallbackCopy() {
-                        return new Promise(function (resolve, reject) {
-                            try {
-                                var textarea = document.createElement('textarea');
-                                textarea.value = value;
-                                textarea.style.position = 'fixed';
-                                textarea.style.opacity = '0';
-                                document.body.appendChild(textarea);
-                                textarea.focus();
-                                textarea.select();
-                                var ok = document.execCommand && document.execCommand('copy');
-                                document.body.removeChild(textarea);
-                                if (!ok) {
-                                    throw new Error('execCommand failed');
-                                }
-                                resolve();
-                            } catch (err) {
-                                reject(err);
-                            }
-                        });
-                    }
-                    var copyPromise = (navigator.clipboard && window.isSecureContext)
-                        ? navigator.clipboard.writeText(value)
-                        : fallbackCopy();
-                    copyPromise.then(function () {
+
+                    const copyPromise = navigator.clipboard.writeText(value);
+                    copyPromise.then(() => {
                         button.classList.add('copied');
                         button.textContent = successLabel;
-                        setTimeout(function () {
+                        setTimeout(() => {
                             button.classList.remove('copied');
                             button.textContent = defaultLabel;
                         }, 2000);
-                    }).catch(function () {
+                    }).catch((err) => {
+                        console.warn('push-mfa: failed to copy token to clipboard', err);
                         button.classList.remove('copied');
                         button.textContent = defaultLabel;
                     });

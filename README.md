@@ -5,11 +5,64 @@
 :warning: This project extends Keycloak with a push-style second factor that mimics passkey primitives. After initial enrollment, the mobile app never receives the real user identifier from Keycloak; instead, it works with a pseudonymous id that only the app can map back to the real user. Everything is implemented with standard Keycloak SPIs plus a small JAX-RS resource exposed under `/realms/<realm>/push-mfa`.
 
 - Build the provider: `mvn -DskipTests package`
-- Run Keycloak locally (imports realm + loads provider): `docker compose up --build keycloak`
+- Run Keycloak locally (imports realm + loads provider): `docker compose up`
 - Keycloak admin UI: <http://localhost:8080> (`admin` / `admin`)
 - Test realm: `demo` with the user `test / test`
 
 ## High Level Flow
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant Browser as User / Browser
+    participant Keycloak as Keycloak Server
+    participant Provider as Push Provider (FCM/APNs)
+    participant Mobile as Mobile App
+
+    Note over Browser, Mobile: **Phase 1: Enrollment (Register Push MFA Device)**
+    
+    Browser->>Keycloak: Login & Trigger Enrollment
+    Keycloak-->>Browser: Render QR Code & Start SSE Listener
+    
+    par Parallel Actions
+        Browser->>Keycloak: SSE Connection (Watch Status)
+        Browser->>Mobile: Scan QR Code
+    end
+
+    Note over Mobile: Verify Token & Generate Device Key Pair
+    
+    Mobile->>Keycloak: POST /enroll/complete
+    Note right of Mobile: Payload: Device JWT + Public JWK<br/>Signed with new Device Private Key
+
+    Keycloak->>Keycloak: Verify Signature & Store Device Credential
+    Keycloak-->>Browser: SSE Event: { status: "APPROVED" }
+    Browser->>Keycloak: Auto-Submit Form (Enrollment Complete)
+
+    Note over Browser, Mobile: **Phase 2: Login (Push MFA Confirmation)**
+
+    Browser->>Keycloak: Login (Username/Password)
+    Keycloak->>Keycloak: Generate Challenge & ConfirmToken
+    
+    par Parallel Actions
+        Keycloak-->>Browser: Render "Waiting for approval..." Page
+        Browser->>Keycloak: SSE Connection (Watch Challenge)
+        Keycloak->>Provider: Send Push Notification
+        Note right of Keycloak: Payload: ConfirmToken<br/>(Pseudonymous ID, ChallengeID)
+    end
+
+    Provider->>Mobile: Deliver Push Notification
+    
+    Mobile->>Mobile: Decrypt Token & Resolve User ID
+    Mobile-->>Browser: (User Prompt: Approve?)
+    Browser-->>Mobile: User Taps "Approve"
+
+    Mobile->>Keycloak: POST /login/challenges/{cid}/respond
+    Note right of Mobile: Payload: LoginToken (Action: Approve)<br/>Auth: DPoP Header + Access Token<br/>Signed with Device Private Key
+
+    Keycloak->>Keycloak: Verify DPoP, Signature & Challenge ID
+    Keycloak-->>Browser: SSE Event: { status: "APPROVED" }
+    Browser->>Keycloak: Auto-Submit Form (Login Success)
+```
 
 1. **Enrollment challenge (RequiredAction):** Keycloak renders a QR code that encodes the realm-signed `enrollmentToken` (the default theme emits `push-mfa-login-app://?token=<enrollmentToken>`, but you can change the URI scheme/payload in your own theme or override the server-side prefix via `--spi-required-action-push-mfa-register-app-uri-prefix=...`). The token is a JWT signed with the realm key and contains user id (`sub`), username, `enrollmentId`, and a Base64URL nonce.
 

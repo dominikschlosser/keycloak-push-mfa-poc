@@ -1,38 +1,41 @@
-(function (window, document) {
-    'use strict';
+'use strict';
+
+(function () {
 
     function ready(fn) {
-        if (document.readyState !== 'loading') {
-            fn();
-        } else {
+        if (document.readyState === 'loading') {
             document.addEventListener('DOMContentLoaded', fn);
+        } else {
+            fn();
         }
     }
 
     function submitForm(formId) {
         if (!formId) {
+            console.warn('push-mfa: no formId provided');
             return;
         }
-        var form = document.getElementById(formId);
+        const form = document.getElementById(formId);
         if (!form) {
+            console.warn(`push-mfa: form with id ${formId} not found`);
             return;
         }
-        if (typeof form.requestSubmit === 'function') {
-            form.requestSubmit();
-        } else {
-            form.submit();
-        }
+
+        // Submit form (which includes validation)
+        form.requestSubmit();
     }
 
     function renderQrCode(containerId, payload) {
         if (!containerId || !payload) {
             return;
         }
-        var container = document.getElementById(containerId);
+        const container = document.getElementById(containerId);
         if (!container || typeof QRCode === 'undefined') {
             return;
         }
         container.innerHTML = '';
+
+        // generate QR code
         new QRCode(container, {
             text: payload,
             width: 240,
@@ -42,8 +45,8 @@
     }
 
     function createChallengeWatcher(config) {
-        var eventsUrl = config.eventsUrl || '';
-        var formId = config.targetFormId;
+        const eventsUrl = config.eventsUrl || '';
+        const formId = config.targetFormId;
 
         if (!eventsUrl) {
             return;
@@ -54,10 +57,10 @@
             return;
         }
 
-        var source = new EventSource(eventsUrl);
-        source.addEventListener('status', function (event) {
+        const source = new EventSource(eventsUrl);
+        source.addEventListener('status', event => {
             try {
-                var payload = event && event.data ? JSON.parse(event.data) : {};
+                const payload = event?.data ? JSON.parse(event.data) : {};
                 if (payload.status && payload.status !== 'PENDING') {
                     source.close();
                     submitForm(formId);
@@ -67,7 +70,7 @@
             }
         });
 
-        source.addEventListener('error', function (err) {
+        source.addEventListener('error', err => {
             console.warn('push-mfa: SSE error (EventSource will retry automatically)', err);
         });
     }
@@ -90,10 +93,10 @@
     }
 
     function autoInit() {
-        var nodes = document.querySelectorAll('[data-push-mfa-page]');
-        nodes.forEach(function (node) {
-            var page = node.getAttribute('data-push-mfa-page');
-            var dataset = node.dataset || {};
+        const nodes = document.querySelectorAll('[data-push-mfa-page]');
+        for (const node of nodes) {
+            const page = node.getAttribute('data-push-mfa-page');
+            const dataset = node.dataset || {};
             if (page === 'register') {
                 initRegisterPage(node, {
                     eventsUrl: dataset.pushEventsUrl || '',
@@ -107,14 +110,15 @@
                     formId: dataset.pushFormId || ''
                 });
             }
-        });
+        }
     }
 
-    window.KeycloakPushMfa = {
+    // Register functions globally for manual use
+    globalThis.KeycloakPushMfa = {
         initRegisterPage: initRegisterPage,
         initLoginPage: initLoginPage,
         autoInit: autoInit
     };
 
     ready(autoInit);
-})(window, document);
+})();
