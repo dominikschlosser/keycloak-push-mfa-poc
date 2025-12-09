@@ -123,7 +123,7 @@ sequenceDiagram
    }
    ```
 
-3. **Confirm token delivery:** Every login creates a fresh push challenge. Keycloak signs a `confirmToken` using the realm key and displays/logs it. This token is what would be sent via your push provider (Firebase/FCM in the demo implementation): it contains only the credential id (`credId`), the challenge id (`cid`), the originating client id (and its display name if configured), and the numeric message `typ`/`ver` identifiers so the provider learns nothing about the real user or whether the login ultimately succeeds.
+3. **Confirm token delivery:** Every login creates a fresh push challenge. Keycloak signs a `confirmToken` using the realm key and displays/logs it. This token is what would be sent via your push provider (Firebase/FCM in the demo implementation): it contains only the credential id (`credId`), the challenge id (`cid`), and the numeric message `typ`/`ver` identifiers so the provider learns nothing about the real user or whether the login ultimately succeeds. After receiving a push, the device should call `/realms/demo/push-mfa/login/pending` to fetch the username and client metadata to display in its approval prompt.
 
    ```json
    {
@@ -133,8 +133,6 @@ sequenceDiagram
      "typ": 1,
      "ver": 1,
      "cid": "1a6d6a0b-3385-4772-8eb8-0d2f4dbd25a4",
-     "client_id": "test-app",
-     "client_name": "Test App",
      "iat": 1731402960,
      "exp": 1731403260
    }
@@ -199,7 +197,7 @@ sequenceDiagram
 
 - **Enrollment token / QR:** Keycloak signs the `enrollmentToken` with the realm key and encodes `sub`, `enrollmentId`, `nonce`, and `exp` in the QR. The app should verify the signature against `/realms/demo/protocol/openid-connect/certs` plus issuer/audience/expiry before using it.
 - **Complete enrollment (`POST /realms/demo/push-mfa/enroll/complete`):** The server ensures the challenge exists, belongs to the user, and is still `PENDING`, checks `exp` and nonce, requires a supported algorithm and `cnf.jwk`, enforces header/`cnf` algorithm compatibility, and verifies the JWT signature with the posted JWK before persisting the credential id and optional `deviceId`.
-- **Confirm token + SSE:** Each login creates a fresh challenge and confirm token signed by the realm key containing only the credential id, `cid`, client id/name, and `exp`. SSE watchers for enrollment/login require the per-challenge `watchSecret` and abort on missing/mismatched secrets or the wrong challenge type before streaming status.
+- **Confirm token + SSE:** Each login creates a fresh challenge and confirm token signed by the realm key containing only the credential id and `cid` (plus `typ`/`ver` and `exp`). The device must call `/push-mfa/login/pending` after receiving a push to fetch user-facing metadata (username, client id/name) before showing the prompt. SSE watchers for enrollment/login require the per-challenge `watchSecret` and abort on missing/mismatched secrets or the wrong challenge type before streaming status.
 - **DPoP-protected API calls (`/login/pending`, `/login/challenges/{cid}/respond`, `/device/*`):** Keycloak re-verifies the access token, confirms the `cnf.jkt` thumbprint matches the stored JWK, checks the DPoP proof `htm`/`htu`, ensures `iat` is within ±120 seconds, and requires `sub` + `deviceId` to match a stored credential (enforcing the algorithm declared in the JWK) before accepting the request-level DPoP signature.
 - **Login approval JWT (`POST /realms/demo/push-mfa/login/challenges/{cid}/respond` body):** After DPoP auth, the login token must match the challenge id, pass signature/`exp` checks against the stored key, carry the correct `credId`, use an algorithm compatible with the stored JWK, and declare `action` as `approve` or `deny`. If the challenge is bound to a specific credential id, mismatched devices are rejected.
 
@@ -328,15 +326,16 @@ DPoP: <proof JWT>
 The `DPoP` header carries a short-lived JWT signed with the user key (see the example above). Its payload must include `htm`, `htu`, `iat`, `jti`, plus the custom `sub` (Keycloak user id) and `deviceId`. Keycloak verifies the signature using the stored credential and only returns pending challenges tied to that device id.
 
 ```json
-{
-  "challenges": [
-    {
-      "userId": "87fa1c21-1b1e-4af8-98b1-1df2e90d3c3d",
-      "cid": "1a6d6a0b-3385-4772-8eb8-0d2f4dbd25a4",
-      "expiresAt": 1731402972,
-      "clientId": "test-app",
-      "clientName": "Test App"
-    }
+  {
+    "challenges": [
+      {
+        "userId": "87fa1c21-1b1e-4af8-98b1-1df2e90d3c3d",
+        "username": "test",
+        "cid": "1a6d6a0b-3385-4772-8eb8-0d2f4dbd25a4",
+        "expiresAt": 1731402972,
+        "clientId": "test-app",
+        "clientName": "Test App"
+      }
   ]
 }
 ```
@@ -438,8 +437,8 @@ All scripts source `scripts/common.sh`, which centralizes base64 helpers, compac
 - **User key material:** Generate a key pair per user (or per device if you let a user enroll more than one), select a unique `kid`, and keep the private key in secure storage. Persist and exchange the public component exclusively as a JWK (the same document posted in `cnf.jwk`). With a single device per user you can reuse a stable `deviceId`; only multi-device setups need distinct ids.
 - **Algorithm choice:** The demo scripts default to RSA/RS256 but also support EC keys and ECDSA proofs—set `DEVICE_KEY_TYPE=EC`, pick a curve via `DEVICE_EC_CURVE` (P-256/384/521), and override `DEVICE_SIGNING_ALG` if you need ES256/384/512. The selected algorithm lives in the stored JWK so Keycloak enforces it for all future DPoP proofs, login approvals, and rotation requests.
 - **State to store locally:** credential id ↔ real Keycloak user id mapping, the user key pair, the `kid`, `deviceType`, `pushProviderId`, `pushProviderType`, preferred `deviceLabel`, and any metadata needed to post to Keycloak again. Track a `deviceId` only when you support multiple devices per user.
-- **Confirm token handling:** When the confirm token arrives through Firebase (or when the user copies it from the waiting UI), decode the JWT, extract `cid` and `credId`, and either call `/push-mfa/login/pending` (optional) or immediately sign the login approval JWT and post it to `/push-mfa/login/challenges/{cid}/respond`. Use the optional `client_name` claim (when present) to display a friendly app label.
-- **Pending challenge discovery:** Before calling `/push-mfa/login/pending`, build a DPoP proof that includes the HTTP method (`htm`), full URL (`htu`), `sub`, `deviceId`, `iat`, and a fresh `jti`, and send it via the `DPoP` header so Keycloak can scope the response to that physical device. The response lists each pending challenge with `clientId` and `clientName`.
+- **Confirm token handling:** When the confirm token arrives through Firebase (or when the user copies it from the waiting UI), decode the JWT, extract `cid` and `credId`, then call `/push-mfa/login/pending` to load user-facing metadata (username + client id/name) before prompting the user. After that, sign the login approval JWT and post it to `/push-mfa/login/challenges/{cid}/respond`.
+- **Pending challenge discovery:** Before calling `/push-mfa/login/pending`, build a DPoP proof that includes the HTTP method (`htm`), full URL (`htu`), `sub`, `deviceId`, `iat`, and a fresh `jti`, and send it via the `DPoP` header so Keycloak can scope the response to that physical device. The response lists each pending challenge with `clientId`, `clientName`, and `username` that should be shown to the user alongside the approve/deny UI.
 - **Access tokens:** Obtain a short-lived access token via the realm’s token endpoint using the device client credentials. The token request itself must include a DPoP proof, and each subsequent REST call must send `Authorization: DPoP <access-token>` alongside a fresh `DPoP` header signed with the same key.
 - **Request authentication:** Every REST call (aside from enrollment, which already embeds the user key) must include a DPoP proof signed with the current user key. The proof binds the request method and URL to the hardware-backed key, making replay or reverse-engineering of a shared client secret ineffective.
 - **Error handling:** Enrollment and login requests return structured error responses (`400`, `403`, or `404`) when the JWTs are invalid, expired, or mismatched. Surface those errors to the user to re-trigger the flow if necessary.
@@ -504,7 +503,7 @@ All shared browser behavior (SSE handling, QR rendering, clipboard helpers) live
 
 - **Signed artifacts end-to-end:** Enrollment and confirm tokens are JWTs signed by realm keys, and device responses are signed with the user key pair. Every hop is authenticated and tamper-evident.
 - **Challenge binding:** Enrollment tokens embed a nonce plus enrollment id, and login approvals reference the opaque challenge id (`cid`), so replaying a response for a different user or challenge fails.
-- **Limited data exposure:** Confirm tokens carry only the credential id and challenge id, preventing the push channel from learning the user’s identity or whether a login succeeded.
+- **Limited data exposure:** Confirm tokens carry only the credential id and challenge id, preventing the push channel from learning the user’s identity or whether a login succeeded; the app fetches username/client metadata via `/login/pending` before showing the approval UI.
 - **Short-lived state:** Challenge lifetime equals every token’s `exp`, so an attacker has at most ~2 minutes to replay data even if transport is intercepted.
 - **Key continuity:** The stored `cnf.jwk` couples future approvals to the same hardware-backed key, giving Keycloak a stable signal that a response truly came from the enrolled device.
 - **Hardware-bound authentication:** Every REST call is authenticated with a JWT signed by that device’s private key, which is far more secure than distributing an easily reverse-engineered client secret inside the mobile app. Stealing the client binary is no longer enough; the attacker must compromise the device’s key material as well.
@@ -514,7 +513,7 @@ All shared browser behavior (SSE handling, QR rendering, clipboard helpers) live
 
 - **Verify every JWT:** Check issuer, audience, signature, and `exp` on enrollment and confirm tokens before acting. Fetch the realm JWKS over HTTPS and cache it defensively.
 - **Protect the user key pair:** Generate it with high-entropy sources, store the private key in Secure Enclave/Keystore/KeyChain, and never export it. Rotate/re-enroll immediately if compromise is suspected.
-- **Enforce challenge integrity:** When a confirm token arrives, compare the `cid`, `credId`, and `client_id` against locally stored state and discard anything unexpected or expired.
+- **Enforce challenge integrity:** When a confirm token arrives, compare the `cid` and `credId` against locally stored state and discard anything unexpected or expired.
 - **Secure transport:** Call the Keycloak endpoints only over TLS, validate certificates (no user-controlled CA overrides), and pin if your threat model requires it.
 - **Harden local state:** Keep the credential id ↔ real user mapping, push provider identifiers/types, and enrollment metadata in encrypted storage with OS-level protection.
 - **Surface errors to users:** Treat 4xx responses (expired, invalid signature, nonce mismatch) as security events, notifying the user and requiring a fresh enrollment or login attempt rather than silently retrying.

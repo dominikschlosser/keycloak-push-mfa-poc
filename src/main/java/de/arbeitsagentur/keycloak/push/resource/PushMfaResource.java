@@ -195,6 +195,7 @@ public class PushMfaResource {
                         .filter(this::ensureAuthenticationSessionActive)
                         .map(challenge -> new LoginChallenge(
                                 device.user().getId(),
+                                device.user().getUsername(),
                                 challenge.getId(),
                                 challenge.getExpiresAt().getEpochSecond(),
                                 challenge.getClientId(),
@@ -897,6 +898,7 @@ public class PushMfaResource {
 
     record LoginChallenge(
             @JsonProperty("userId") String userId,
+            @JsonProperty("username") String username,
             @JsonProperty("cid") String cid,
             @JsonProperty("expiresAt") long expiresAt,
             @JsonProperty("clientId") String clientId,

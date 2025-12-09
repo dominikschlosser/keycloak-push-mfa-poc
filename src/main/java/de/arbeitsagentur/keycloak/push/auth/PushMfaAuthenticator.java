@@ -105,9 +105,7 @@ public class PushMfaAuthenticator implements Authenticator {
                 credentialData.getCredentialId(),
                 pushChallenge.getId(),
                 pushChallenge.getExpiresAt(),
-                context.getUriInfo().getBaseUri(),
-                clientId,
-                clientDisplayName);
+                context.getUriInfo().getBaseUri());
 
         LOG.debugf(
                 "Push message prepared {version=%d,type=%d,credentialId=%s}",
@@ -197,9 +195,7 @@ public class PushMfaAuthenticator implements Authenticator {
                                         credentialData.getCredentialId(),
                                         current.getId(),
                                         current.getExpiresAt(),
-                                        context.getUriInfo().getBaseUri(),
-                                        clientId,
-                                        clientDisplayName);
+                                        context.getUriInfo().getBaseUri());
 
                 showWaitingForm(context, current, credentialData, confirmToken);
             }
