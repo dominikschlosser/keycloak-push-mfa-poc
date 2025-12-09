@@ -1,5 +1,21 @@
 # Changelog
 
+## [1.0.1](https://github.com/ba-itsys/keycloak-push-mfa-extension/compare/v1.0.0...v1.0.1) (2025-12-09)
+
+
+### Bug Fixes
+
+* adds beans.xml for realm-provider propagation ([a72feca](https://github.com/ba-itsys/keycloak-push-mfa-extension/commit/a72fecaee592e4994e225afb774018409f122dcd))
+* adds beans.xml for realm-provider propagation ([0a24d34](https://github.com/ba-itsys/keycloak-push-mfa-extension/commit/0a24d34afbcfbd6af8c8981cb551a66affecbe6c))
+* **ci:** update sortPom configuration to disable expanding empty elements ([890dd03](https://github.com/ba-itsys/keycloak-push-mfa-extension/commit/890dd03b2314c660f7de861c5d8c3f3db2abb823))
+
+
+### Documentation
+
+* add PR template and update contributing guidelines ([cbee3a8](https://github.com/ba-itsys/keycloak-push-mfa-extension/commit/cbee3a85cc75b4f8e798828f6af96e35011b14ed))
+* add PR template and update contributing guidelines ([4234ede](https://github.com/ba-itsys/keycloak-push-mfa-extension/commit/4234ede4986d99bcde38eba6506db8255041448b))
+* **contributing:** remove redundant section on signed-off commits ([c75ccb9](https://github.com/ba-itsys/keycloak-push-mfa-extension/commit/c75ccb952043b1a50df4332467ec04d8eeb60343))
+
 ## 1.0.0 (2025-12-05)
 
 
