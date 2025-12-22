@@ -1,0 +1,64 @@
+package de.arbeitsagentur.keycloak.push.auth;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+
+import java.util.HashSet;
+import java.util.List;
+import org.junit.jupiter.api.Test;
+
+class PushMfaAuthenticatorTest {
+
+    @Test
+    void numberMatchOptionsAreUnique() {
+        PushMfaAuthenticator authenticator = new PushMfaAuthenticator();
+
+        for (int i = 0; i < 25; i++) {
+            List<String> options = authenticator.generateNumberMatchOptions();
+
+            assertEquals(3, options.size(), () -> "Expected 3 number-match options but got: " + options);
+            assertEquals(3, new HashSet<>(options).size(), () -> "Expected unique options but got: " + options);
+            for (String option : options) {
+                assertTrue(
+                        option.matches("^(0|[1-9][0-9]?)$"),
+                        () -> "Expected number-match option 0-99 but got: " + option);
+            }
+        }
+    }
+
+    @Test
+    void numberMatchSelectionIsApproximatelyUniform() {
+        PushMfaAuthenticator authenticator = new PushMfaAuthenticator();
+
+        int samples = 150;
+        int[] counts = new int[3];
+        for (int attempt = 0; attempt < samples; attempt++) {
+            List<String> options = authenticator.generateNumberMatchOptions();
+            String displayed = authenticator.selectNumberMatchValue(options);
+            int index = options.indexOf(displayed);
+            assertTrue(index >= 0, () -> "Displayed value not found in options: " + displayed + " vs " + options);
+            counts[index]++;
+        }
+
+        // Regression test for randomness:
+        // The shown number should be equally likely to be in position 0, 1, or 2 of the 3-item list.
+        // We create many challenges, count which position the shown number had, and then run a chi-square test.
+        // Why 18.42? With 3 buckets the test has df=2; 18.42 is the 99.99th percentile (p=0.0001).
+        final double chiSquareCritical = 18.42;
+        double expected = samples / 3.0;
+        double chiSquare = 0.0;
+        for (int count : counts) {
+            double diff = count - expected;
+            chiSquare += (diff * diff) / expected;
+        }
+        assertTrue(
+                chiSquare <= chiSquareCritical,
+                "Expected roughly uniform distribution across indices but got counts=" + counts[0] + "," + counts[1]
+                        + "," + counts[2] + " (chiSquare=" + chiSquare + ")");
+
+        assertTrue(
+                counts[0] > 0 && counts[1] > 0 && counts[2] > 0,
+                () -> "All indices should appear at least once but got counts=" + counts[0] + "," + counts[1] + ","
+                        + counts[2]);
+    }
+}
