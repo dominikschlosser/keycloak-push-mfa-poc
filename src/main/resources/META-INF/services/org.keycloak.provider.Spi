@@ -1,2 +1,3 @@
 de.arbeitsagentur.keycloak.push.spi.PushNotificationSpi
 de.arbeitsagentur.keycloak.push.spi.event.PushMfaEventSpi
+de.arbeitsagentur.keycloak.push.spi.waitchallenge.WaitChallengeStateSpi

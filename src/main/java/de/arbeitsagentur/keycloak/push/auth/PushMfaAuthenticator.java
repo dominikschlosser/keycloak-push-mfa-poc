@@ -20,13 +20,16 @@ import de.arbeitsagentur.keycloak.push.challenge.PendingChallengeGuard;
 import de.arbeitsagentur.keycloak.push.challenge.PushChallenge;
 import de.arbeitsagentur.keycloak.push.challenge.PushChallengeStatus;
 import de.arbeitsagentur.keycloak.push.challenge.PushChallengeStore;
+import de.arbeitsagentur.keycloak.push.challenge.WaitChallengeState;
 import de.arbeitsagentur.keycloak.push.credential.PushCredentialData;
 import de.arbeitsagentur.keycloak.push.credential.PushCredentialService;
+import de.arbeitsagentur.keycloak.push.spi.waitchallenge.WaitChallengeStateProvider;
 import de.arbeitsagentur.keycloak.push.token.PushConfirmTokenBuilder;
 import de.arbeitsagentur.keycloak.push.util.PushMfaConstants;
 import jakarta.ws.rs.core.MultivaluedMap;
 import jakarta.ws.rs.core.Response;
 import java.time.Duration;
+import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
 import org.keycloak.authentication.AuthenticationFlowContext;
@@ -68,6 +71,9 @@ public class PushMfaAuthenticator implements Authenticator {
             return;
         }
         if (checkPendingChallengeLimit(context, null)) {
+            return;
+        }
+        if (checkWaitChallengeLimit(context)) {
             return;
         }
         issueAndShowChallenge(context, cred.credential, cred.data);
@@ -140,6 +146,8 @@ public class PushMfaAuthenticator implements Authenticator {
             case APPROVED -> {
                 store.remove(ch.getId());
                 ChallengeNoteHelper.clear(authSession);
+                // Reset wait state on successful approval
+                resetWaitChallengeState(context);
                 context.success();
             }
             case DENIED -> {
@@ -158,6 +166,9 @@ public class PushMfaAuthenticator implements Authenticator {
 
     private void retryChallenge(AuthenticationFlowContext context, PushChallengeStore store) {
         if (checkPendingChallengeLimit(context, null)) {
+            return;
+        }
+        if (checkWaitChallengeLimit(context)) {
             return;
         }
         CredentialAndData cred = resolveCredential(context.getUser());
@@ -181,6 +192,10 @@ public class PushMfaAuthenticator implements Authenticator {
 
         ChallengeIssuer.IssuedChallenge issued =
                 ChallengeIssuer.issue(context, store, data, cred, ttl, clientId, rootSessionId);
+
+        // Record challenge creation for wait challenge rate limiting
+        recordWaitChallengeCreated(context);
+
         showWaitingForm(context, issued.challenge(), data, issued.confirmToken());
     }
 
@@ -245,6 +260,13 @@ public class PushMfaAuthenticator implements Authenticator {
                 context.getAuthenticatorConfig(),
                 PushMfaConstants.MAX_PENDING_AUTH_CHALLENGES_CONFIG,
                 PushMfaConstants.DEFAULT_MAX_PENDING_AUTH_CHALLENGES);
+
+        // When wait challenge rate limiting is enabled, force max pending to 1
+        // to ensure rate limiting is effective
+        if (AuthenticatorConfigHelper.isWaitChallengeEnabled(context.getAuthenticatorConfig())) {
+            maxPending = 1;
+        }
+
         String rootSessionId = getRootSessionId(context);
 
         PendingChallengeGuard guard = new PendingChallengeGuard(store);
@@ -346,6 +368,72 @@ public class PushMfaAuthenticator implements Authenticator {
         context.failureChallenge(
                 AuthenticationFlowError.INVALID_CREDENTIALS,
                 context.form().setError("push-mfa-denied").createForm("push-denied.ftl"));
+    }
+
+    // Wait challenge rate limiting methods
+
+    private boolean checkWaitChallengeLimit(AuthenticationFlowContext context) {
+        if (!AuthenticatorConfigHelper.isWaitChallengeEnabled(context.getAuthenticatorConfig())) {
+            return false;
+        }
+
+        WaitChallengeStateProvider provider = getWaitChallengeStateProvider(context);
+        if (provider == null) {
+            return false;
+        }
+
+        Duration resetPeriod = AuthenticatorConfigHelper.getWaitChallengeResetPeriod(context.getAuthenticatorConfig());
+        Optional<WaitChallengeState> state =
+                provider.get(context.getRealm().getId(), context.getUser().getId(), resetPeriod);
+
+        if (state.isPresent() && state.get().isWaiting(Instant.now())) {
+            showWaitRequiredError(context, state.get().remainingWait(Instant.now()));
+            return true;
+        }
+        return false;
+    }
+
+    private void recordWaitChallengeCreated(AuthenticationFlowContext context) {
+        if (!AuthenticatorConfigHelper.isWaitChallengeEnabled(context.getAuthenticatorConfig())) {
+            return;
+        }
+
+        WaitChallengeStateProvider provider = getWaitChallengeStateProvider(context);
+        if (provider == null) {
+            return;
+        }
+
+        provider.recordChallengeCreated(
+                context.getRealm().getId(),
+                context.getUser().getId(),
+                AuthenticatorConfigHelper.getWaitChallengeBase(context.getAuthenticatorConfig()),
+                AuthenticatorConfigHelper.getWaitChallengeMax(context.getAuthenticatorConfig()),
+                AuthenticatorConfigHelper.getWaitChallengeResetPeriod(context.getAuthenticatorConfig()));
+    }
+
+    private void resetWaitChallengeState(AuthenticationFlowContext context) {
+        if (!AuthenticatorConfigHelper.isWaitChallengeEnabled(context.getAuthenticatorConfig())) {
+            return;
+        }
+
+        WaitChallengeStateProvider provider = getWaitChallengeStateProvider(context);
+        if (provider == null) {
+            return;
+        }
+
+        provider.reset(context.getRealm().getId(), context.getUser().getId());
+    }
+
+    private WaitChallengeStateProvider getWaitChallengeStateProvider(AuthenticationFlowContext context) {
+        String providerId = AuthenticatorConfigHelper.getWaitChallengeStorageProvider(context.getAuthenticatorConfig());
+        return context.getSession().getProvider(WaitChallengeStateProvider.class, providerId);
+    }
+
+    private void showWaitRequiredError(AuthenticationFlowContext context, Duration remainingWait) {
+        context.challenge(context.form()
+                .setAttribute("waitSeconds", remainingWait.toSeconds())
+                .setError("push-mfa-wait-required")
+                .createForm("push-wait-required.ftl"));
     }
 
     @Override

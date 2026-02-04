@@ -103,9 +103,69 @@ public final class AdminClient {
         updatePushMfaAuthenticatorConfig(Map.of(PushMfaConstants.LOGIN_CHALLENGE_TTL_CONFIG, String.valueOf(seconds)));
     }
 
+    public void configurePushMfaMaxPendingChallenges(int maxPending) throws Exception {
+        updatePushMfaAuthenticatorConfig(
+                Map.of(PushMfaConstants.MAX_PENDING_AUTH_CHALLENGES_CONFIG, String.valueOf(maxPending)));
+    }
+
     public void configurePushMfaAutoAddRequiredAction(boolean autoAdd) throws Exception {
         updatePushMfaAuthenticatorConfig(
                 Map.of(PushMfaConstants.AUTO_ADD_REQUIRED_ACTION_CONFIG, String.valueOf(autoAdd)));
+    }
+
+    public void configurePushMfaWaitChallenge(
+            boolean enabled, int baseSeconds, int maxSeconds, int resetHours, String storageProvider) throws Exception {
+        Map<String, String> config = new HashMap<>();
+        config.put(PushMfaConstants.WAIT_CHALLENGE_ENABLED_CONFIG, String.valueOf(enabled));
+        config.put(PushMfaConstants.WAIT_CHALLENGE_BASE_SECONDS_CONFIG, String.valueOf(baseSeconds));
+        config.put(PushMfaConstants.WAIT_CHALLENGE_MAX_SECONDS_CONFIG, String.valueOf(maxSeconds));
+        config.put(PushMfaConstants.WAIT_CHALLENGE_RESET_HOURS_CONFIG, String.valueOf(resetHours));
+        config.put(PushMfaConstants.WAIT_CHALLENGE_STORAGE_PROVIDER_CONFIG, storageProvider);
+        updatePushMfaAuthenticatorConfig(config);
+    }
+
+    public void disablePushMfaWaitChallenge() throws Exception {
+        updatePushMfaAuthenticatorConfig(Map.of(PushMfaConstants.WAIT_CHALLENGE_ENABLED_CONFIG, String.valueOf(false)));
+    }
+
+    /**
+     * Fully reset wait challenge configuration to defaults, not just disable.
+     * This ensures no config values from previous tests carry over.
+     */
+    public void resetPushMfaWaitChallengeToDefaults() throws Exception {
+        Map<String, String> config = new HashMap<>();
+        config.put(PushMfaConstants.WAIT_CHALLENGE_ENABLED_CONFIG, String.valueOf(false));
+        config.put(
+                PushMfaConstants.WAIT_CHALLENGE_BASE_SECONDS_CONFIG,
+                String.valueOf(PushMfaConstants.DEFAULT_WAIT_CHALLENGE_BASE_SECONDS));
+        config.put(
+                PushMfaConstants.WAIT_CHALLENGE_MAX_SECONDS_CONFIG,
+                String.valueOf(PushMfaConstants.DEFAULT_WAIT_CHALLENGE_MAX_SECONDS));
+        config.put(
+                PushMfaConstants.WAIT_CHALLENGE_RESET_HOURS_CONFIG,
+                String.valueOf(PushMfaConstants.DEFAULT_WAIT_CHALLENGE_RESET_HOURS));
+        config.put(
+                PushMfaConstants.WAIT_CHALLENGE_STORAGE_PROVIDER_CONFIG,
+                PushMfaConstants.DEFAULT_WAIT_CHALLENGE_STORAGE_PROVIDER);
+        updatePushMfaAuthenticatorConfig(config);
+    }
+
+    /**
+     * Clear keys caches to invalidate single-use-object state.
+     * This helps ensure wait challenge state from previous tests doesn't persist.
+     */
+    public void clearKeysCaches() throws Exception {
+        ensureAccessToken();
+        URI clearKeysCache = baseUri.resolve("/admin/realms/demo/clear-keys-cache");
+        HttpRequest keysCacheRequest = HttpRequest.newBuilder(clearKeysCache)
+                .header("Authorization", "Bearer " + accessToken)
+                .POST(HttpRequest.BodyPublishers.noBody())
+                .build();
+        HttpResponse<String> keysResponse = http.send(keysCacheRequest, HttpResponse.BodyHandlers.ofString());
+        // Keys cache clear might not be available in all versions, so we don't fail on error
+        if (keysResponse.statusCode() != 204 && keysResponse.statusCode() != 404) {
+            // Log but don't fail
+        }
     }
 
     public void logoutAllSessions(String username) throws Exception {
@@ -114,6 +174,64 @@ public final class AdminClient {
             throw new IllegalStateException("User not found: " + username);
         }
         logoutUser(userId);
+    }
+
+    public void clearUserAttribute(String username, String attributeName) throws Exception {
+        ensureAccessToken();
+        String userId = findUserId(username);
+        if (userId == null || userId.isBlank()) {
+            return; // User doesn't exist, nothing to clear
+        }
+
+        // Get current user representation
+        URI userUri = baseUri.resolve("/admin/realms/demo/users/" + userId);
+        HttpResponse<String> getResponse = http.send(
+                HttpRequest.newBuilder(userUri)
+                        .header("Authorization", "Bearer " + accessToken)
+                        .header("Accept", "application/json")
+                        .GET()
+                        .build(),
+                HttpResponse.BodyHandlers.ofString());
+
+        if (getResponse.statusCode() != 200) {
+            return; // User not found or error
+        }
+
+        JsonNode userNode = MAPPER.readTree(getResponse.body());
+        ObjectNode userObject = (ObjectNode) userNode;
+
+        // Ensure attributes object exists
+        JsonNode attributes = userObject.get("attributes");
+        ObjectNode attrsObject;
+        if (attributes == null || !attributes.isObject()) {
+            attrsObject = MAPPER.createObjectNode();
+            userObject.set("attributes", attrsObject);
+        } else {
+            attrsObject = (ObjectNode) attributes;
+        }
+
+        // Remove the attribute (even if it doesn't exist, we still update to be safe)
+        attrsObject.remove(attributeName);
+
+        // Update the user
+        HttpResponse<String> putResponse = http.send(
+                HttpRequest.newBuilder(userUri)
+                        .header("Authorization", "Bearer " + accessToken)
+                        .header("Content-Type", "application/json")
+                        .PUT(HttpRequest.BodyPublishers.ofString(userObject.toString()))
+                        .build(),
+                HttpResponse.BodyHandlers.ofString());
+
+        if (putResponse.statusCode() != 204) {
+            throw new IllegalStateException(
+                    "Failed to clear user attribute: " + putResponse.statusCode() + " " + putResponse.body());
+        }
+
+        // Clear caches to ensure Keycloak picks up the change
+        clearRealmCaches();
+
+        // Small delay for changes to propagate
+        Thread.sleep(100);
     }
 
     public void deleteUserCredentials(String username) throws Exception {
@@ -245,6 +363,20 @@ public final class AdminClient {
                         .GET()
                         .build(),
                 HttpResponse.BodyHandlers.ofString());
+
+        // Handle token expiration by refreshing and retrying once
+        if (response.statusCode() == 401) {
+            accessToken = null;
+            ensureAccessToken();
+            response = http.send(
+                    HttpRequest.newBuilder(uri)
+                            .header("Authorization", "Bearer " + accessToken)
+                            .header("Accept", "application/json")
+                            .GET()
+                            .build(),
+                    HttpResponse.BodyHandlers.ofString());
+        }
+
         if (response.statusCode() != 200) {
             throw new IllegalStateException(
                     "Failed to read flow executions: " + response.statusCode() + " body=" + response.body());

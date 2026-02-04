@@ -94,6 +94,49 @@ public class PushMfaAuthenticatorFactory implements AuthenticatorFactory {
                         + "Disable to allow users to add credentials via account console.");
         autoAddRequiredAction.setDefaultValue(Boolean.TRUE);
 
+        // Wait challenge rate limiting configuration
+        ProviderConfigProperty waitChallengeEnabled = new ProviderConfigProperty();
+        waitChallengeEnabled.setName(PushMfaConstants.WAIT_CHALLENGE_ENABLED_CONFIG);
+        waitChallengeEnabled.setLabel("Enable wait challenge rate limiting");
+        waitChallengeEnabled.setType(ProviderConfigProperty.BOOLEAN_TYPE);
+        waitChallengeEnabled.setHelpText(
+                "When enabled, users must wait between creating new challenges if they don't approve the previous one. "
+                        + "Wait time doubles with each unapproved challenge (exponential backoff).");
+        waitChallengeEnabled.setDefaultValue(Boolean.FALSE);
+
+        ProviderConfigProperty waitChallengeBase = new ProviderConfigProperty();
+        waitChallengeBase.setName(PushMfaConstants.WAIT_CHALLENGE_BASE_SECONDS_CONFIG);
+        waitChallengeBase.setLabel("Wait challenge base time (seconds)");
+        waitChallengeBase.setType(ProviderConfigProperty.STRING_TYPE);
+        waitChallengeBase.setHelpText("Base wait time in seconds. Doubles with each unapproved challenge.");
+        waitChallengeBase.setDefaultValue(String.valueOf(PushMfaConstants.DEFAULT_WAIT_CHALLENGE_BASE_SECONDS));
+
+        ProviderConfigProperty waitChallengeMax = new ProviderConfigProperty();
+        waitChallengeMax.setName(PushMfaConstants.WAIT_CHALLENGE_MAX_SECONDS_CONFIG);
+        waitChallengeMax.setLabel("Wait challenge max time (seconds)");
+        waitChallengeMax.setType(ProviderConfigProperty.STRING_TYPE);
+        waitChallengeMax.setHelpText("Maximum wait time in seconds. Exponential backoff is capped at this value.");
+        waitChallengeMax.setDefaultValue(String.valueOf(PushMfaConstants.DEFAULT_WAIT_CHALLENGE_MAX_SECONDS));
+
+        ProviderConfigProperty waitChallengeReset = new ProviderConfigProperty();
+        waitChallengeReset.setName(PushMfaConstants.WAIT_CHALLENGE_RESET_HOURS_CONFIG);
+        waitChallengeReset.setLabel("Wait challenge reset period (hours)");
+        waitChallengeReset.setType(ProviderConfigProperty.STRING_TYPE);
+        waitChallengeReset.setHelpText("Time in hours after which the wait counter resets automatically.");
+        waitChallengeReset.setDefaultValue(String.valueOf(PushMfaConstants.DEFAULT_WAIT_CHALLENGE_RESET_HOURS));
+
+        ProviderConfigProperty waitChallengeStorage = new ProviderConfigProperty();
+        waitChallengeStorage.setName(PushMfaConstants.WAIT_CHALLENGE_STORAGE_PROVIDER_CONFIG);
+        waitChallengeStorage.setLabel("Wait challenge storage provider");
+        waitChallengeStorage.setType(ProviderConfigProperty.LIST_TYPE);
+        waitChallengeStorage.setOptions(List.of(
+                PushMfaConstants.WAIT_CHALLENGE_STORAGE_SINGLE_USE_OBJECT,
+                PushMfaConstants.WAIT_CHALLENGE_STORAGE_USER_ATTRIBUTE));
+        waitChallengeStorage.setHelpText("Storage backend for wait challenge state. "
+                + "'single-use-object': Fast, in-memory, lost on restart. "
+                + "'user-attribute': Persisted in DB, survives restarts.");
+        waitChallengeStorage.setDefaultValue(PushMfaConstants.DEFAULT_WAIT_CHALLENGE_STORAGE_PROVIDER);
+
         CONFIG_PROPERTIES = List.of(
                 loginTtl,
                 maxPending,
@@ -101,7 +144,12 @@ public class PushMfaAuthenticatorFactory implements AuthenticatorFactory {
                 userVerificationPinLength,
                 sameDeviceUserVerification,
                 appUniversalLink,
-                autoAddRequiredAction);
+                autoAddRequiredAction,
+                waitChallengeEnabled,
+                waitChallengeBase,
+                waitChallengeMax,
+                waitChallengeReset,
+                waitChallengeStorage);
     }
 
     @Override

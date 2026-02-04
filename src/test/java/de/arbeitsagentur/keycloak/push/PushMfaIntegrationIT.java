@@ -76,6 +76,15 @@ class PushMfaIntegrationIT {
     private static final String ATTACKER_USERNAME = "attacker";
     private static final String ATTACKER_PASSWORD = "attacker";
 
+    // Separate users for wait challenge tests to ensure complete isolation
+    private static final String WAIT_CHALLENGE_USER_1 = "wait-user-1";
+    private static final String WAIT_CHALLENGE_USER_2 = "wait-user-2";
+    private static final String WAIT_CHALLENGE_USER_3 = "wait-user-3";
+    private static final String WAIT_CHALLENGE_USER_4 = "wait-user-4";
+    private static final String WAIT_CHALLENGE_USER_5 = "wait-user-5";
+    private static final String WAIT_CHALLENGE_USER_6 = "wait-user-6";
+    private static final String WAIT_CHALLENGE_PASSWORD = "wait-test";
+
     @Container
     private static final GenericContainer<?> KEYCLOAK = new GenericContainer<>("quay.io/keycloak/keycloak:26.4.5")
             .withExposedPorts(8080)
@@ -93,9 +102,17 @@ class PushMfaIntegrationIT {
     private AdminClient adminClient;
 
     @BeforeAll
-    void setup() {
+    void setup() throws Exception {
         baseUri = URI.create(String.format("http://%s:%d/", KEYCLOAK.getHost(), KEYCLOAK.getMappedPort(8080)));
         adminClient = new AdminClient(baseUri);
+
+        // Create dedicated users for wait challenge tests to ensure complete isolation
+        adminClient.ensureUser(WAIT_CHALLENGE_USER_1, WAIT_CHALLENGE_PASSWORD);
+        adminClient.ensureUser(WAIT_CHALLENGE_USER_2, WAIT_CHALLENGE_PASSWORD);
+        adminClient.ensureUser(WAIT_CHALLENGE_USER_3, WAIT_CHALLENGE_PASSWORD);
+        adminClient.ensureUser(WAIT_CHALLENGE_USER_4, WAIT_CHALLENGE_PASSWORD);
+        adminClient.ensureUser(WAIT_CHALLENGE_USER_5, WAIT_CHALLENGE_PASSWORD);
+        adminClient.ensureUser(WAIT_CHALLENGE_USER_6, WAIT_CHALLENGE_PASSWORD);
     }
 
     @BeforeEach
@@ -104,6 +121,16 @@ class PushMfaIntegrationIT {
                 PushMfaConstants.USER_VERIFICATION_NONE, PushMfaConstants.DEFAULT_USER_VERIFICATION_PIN_LENGTH);
         adminClient.configurePushMfaSameDeviceUserVerification(false);
         adminClient.configurePushMfaAutoAddRequiredAction(true);
+        // Fully reset wait challenge config to defaults (not just disable)
+        adminClient.resetPushMfaWaitChallengeToDefaults();
+        // Reset max pending challenges to default
+        adminClient.configurePushMfaMaxPendingChallenges(PushMfaConstants.DEFAULT_MAX_PENDING_AUTH_CHALLENGES);
+        // Reset login challenge TTL to default
+        adminClient.configurePushMfaLoginChallengeTtlSeconds(PushMfaConstants.DEFAULT_LOGIN_CHALLENGE_TTL.toSeconds());
+        // Clear wait challenge state from user attributes
+        adminClient.clearUserAttribute(TEST_USERNAME, "push-mfa-wait-state");
+        // Small delay to ensure all config changes propagate
+        Thread.sleep(100);
     }
 
     @Test
@@ -650,6 +677,361 @@ class PushMfaIntegrationIT {
         } catch (Exception ex) {
             System.err.println("Keycloak container logs:\n" + KEYCLOAK.getLogs());
             throw ex;
+        }
+    }
+
+    @Test
+    void waitChallengeBlocksImmediateRetryWithSingleUseObjectStorage() throws Exception {
+        waitChallengeBlocksImmediateRetry(
+                WAIT_CHALLENGE_USER_1, PushMfaConstants.WAIT_CHALLENGE_STORAGE_SINGLE_USE_OBJECT);
+    }
+
+    @Test
+    void waitChallengeBlocksImmediateRetryWithUserAttributeStorage() throws Exception {
+        waitChallengeBlocksImmediateRetry(
+                WAIT_CHALLENGE_USER_2, PushMfaConstants.WAIT_CHALLENGE_STORAGE_USER_ATTRIBUTE);
+    }
+
+    private void waitChallengeBlocksImmediateRetry(String username, String storageProvider) throws Exception {
+        // Enroll device BEFORE enabling wait challenge to avoid creating wait state during enrollment
+        DeviceClient deviceClient = enrollDevice(username, WAIT_CHALLENGE_PASSWORD, DeviceKeyType.RSA);
+
+        // Now enable wait challenge after enrollment is complete
+        // Increase max pending to handle any leftover challenges from previous tests
+        adminClient.configurePushMfaMaxPendingChallenges(10);
+        adminClient.configurePushMfaWaitChallenge(true, 2, 10, 1, storageProvider);
+        adminClient.configurePushMfaLoginChallengeTtlSeconds(2);
+        try {
+            BrowserSession pushSession = new BrowserSession(baseUri);
+
+            // First login - creates challenge
+            HtmlPage loginPage = pushSession.startAuthorization("test-app");
+            HtmlPage waitingPage = pushSession.submitLogin(loginPage, username, WAIT_CHALLENGE_PASSWORD);
+            BrowserSession.DeviceChallenge firstChallenge = pushSession.extractDeviceChallenge(waitingPage);
+
+            // Wait for challenge to expire
+            awaitNoPendingChallenges(deviceClient);
+
+            // Submit expired challenge
+            HtmlPage expiredPage = pushSession.submitPushChallengeForPage(firstChallenge.formAction());
+            String expiredText = expiredPage.document().text().toLowerCase();
+            assertTrue(expiredText.contains("expired"), "Expected expired page but got: " + expiredText);
+
+            // Immediate retry should be blocked by wait challenge
+            HtmlPage retriedPage = pushSession.retryPushChallenge(expiredPage);
+            String retriedText = retriedPage.document().text().toLowerCase();
+            assertTrue(
+                    retriedText.contains("wait")
+                            || retriedText.contains("rate limit")
+                            || retriedText.contains("too many"),
+                    "Expected wait required page but got: " + retriedText);
+        } finally {
+            adminClient.disablePushMfaWaitChallenge();
+            adminClient.configurePushMfaLoginChallengeTtlSeconds(
+                    PushMfaConstants.DEFAULT_LOGIN_CHALLENGE_TTL.toSeconds());
+            // Clean up wait state for next test
+            adminClient.clearUserAttribute(username, "push-mfa-wait-state");
+        }
+    }
+
+    @Test
+    void waitChallengeResetsOnApproval() throws Exception {
+        String username = WAIT_CHALLENGE_USER_3;
+        // Enroll device BEFORE enabling wait challenge to avoid creating wait state during enrollment
+        DeviceClient deviceClient = enrollDevice(username, WAIT_CHALLENGE_PASSWORD, DeviceKeyType.RSA);
+
+        // Now enable wait challenge after enrollment is complete
+        // Increase max pending to handle any leftover challenges from previous tests
+        adminClient.configurePushMfaMaxPendingChallenges(10);
+        adminClient.configurePushMfaWaitChallenge(
+                true, 1, 60, 1, PushMfaConstants.WAIT_CHALLENGE_STORAGE_USER_ATTRIBUTE);
+        adminClient.configurePushMfaLoginChallengeTtlSeconds(2);
+        try {
+
+            // First login - creates challenge but let it expire (builds up wait counter)
+            BrowserSession firstSession = new BrowserSession(baseUri);
+            HtmlPage firstLoginPage = firstSession.startAuthorization("test-app");
+            HtmlPage firstWaitingPage = firstSession.submitLogin(firstLoginPage, username, WAIT_CHALLENGE_PASSWORD);
+            firstSession.extractDeviceChallenge(firstWaitingPage);
+            awaitNoPendingChallenges(deviceClient);
+
+            // Wait for the initial wait period (1s base + generous buffer)
+            Thread.sleep(2000);
+
+            // Second login - approve this time
+            BrowserSession secondSession = new BrowserSession(baseUri);
+            HtmlPage secondLoginPage = secondSession.startAuthorization("test-app");
+            HtmlPage secondWaitingPage = secondSession.submitLogin(secondLoginPage, username, WAIT_CHALLENGE_PASSWORD);
+            BrowserSession.DeviceChallenge secondChallenge = secondSession.extractDeviceChallenge(secondWaitingPage);
+
+            String status = deviceClient.respondToChallenge(
+                    secondChallenge.confirmToken(), secondChallenge.challengeId(), PushMfaConstants.CHALLENGE_APPROVE);
+            assertEquals("approved", status);
+            secondSession.completePushChallenge(secondChallenge.formAction());
+
+            // Wait for the approval to fully process and challenge to be cleared
+            awaitNoPendingChallenges(deviceClient);
+
+            // Third login should work immediately (wait counter was reset on approval)
+            BrowserSession thirdSession = new BrowserSession(baseUri);
+            HtmlPage thirdLoginPage = thirdSession.startAuthorization("test-app");
+            HtmlPage thirdWaitingPage = thirdSession.submitLogin(thirdLoginPage, username, WAIT_CHALLENGE_PASSWORD);
+            BrowserSession.DeviceChallenge thirdChallenge = thirdSession.extractDeviceChallenge(thirdWaitingPage);
+            assertNotNull(thirdChallenge, "Third login should work immediately after approval reset");
+
+            // Clean up
+            deviceClient.respondToChallenge(
+                    thirdChallenge.confirmToken(), thirdChallenge.challengeId(), PushMfaConstants.CHALLENGE_DENY);
+        } finally {
+            adminClient.disablePushMfaWaitChallenge();
+            adminClient.configurePushMfaLoginChallengeTtlSeconds(
+                    PushMfaConstants.DEFAULT_LOGIN_CHALLENGE_TTL.toSeconds());
+            // Clean up wait state for next test
+            adminClient.clearUserAttribute(username, "push-mfa-wait-state");
+        }
+    }
+
+    @Test
+    void waitChallengeAllowsRetryAfterWaiting() throws Exception {
+        String username = WAIT_CHALLENGE_USER_4;
+        // Enroll device BEFORE enabling wait challenge to avoid creating wait state during enrollment
+        DeviceClient deviceClient = enrollDevice(username, WAIT_CHALLENGE_PASSWORD, DeviceKeyType.RSA);
+
+        // Now enable wait challenge after enrollment is complete
+        // Increase max pending to handle any leftover challenges from previous tests
+        adminClient.configurePushMfaMaxPendingChallenges(10);
+        // Use 2 second base wait for testability
+        adminClient.configurePushMfaWaitChallenge(
+                true, 2, 60, 1, PushMfaConstants.WAIT_CHALLENGE_STORAGE_USER_ATTRIBUTE);
+        adminClient.configurePushMfaLoginChallengeTtlSeconds(2);
+        try {
+            BrowserSession pushSession = new BrowserSession(baseUri);
+
+            // First login - creates challenge
+            HtmlPage loginPage = pushSession.startAuthorization("test-app");
+            HtmlPage waitingPage = pushSession.submitLogin(loginPage, username, WAIT_CHALLENGE_PASSWORD);
+            BrowserSession.DeviceChallenge firstChallenge = pushSession.extractDeviceChallenge(waitingPage);
+
+            // Wait for challenge to expire
+            awaitNoPendingChallenges(deviceClient);
+
+            // Submit expired challenge
+            HtmlPage expiredPage = pushSession.submitPushChallengeForPage(firstChallenge.formAction());
+            String expiredText = expiredPage.document().text().toLowerCase();
+            assertTrue(expiredText.contains("expired"), "Expected expired page but got: " + expiredText);
+
+            // Immediate retry should be blocked
+            HtmlPage retriedPage = pushSession.retryPushChallenge(expiredPage);
+            String retriedText = retriedPage.document().text().toLowerCase();
+            assertTrue(
+                    retriedText.contains("wait")
+                            || retriedText.contains("rate limit")
+                            || retriedText.contains("too many"),
+                    "Expected wait required page but got: " + retriedText);
+
+            // The retry attempt above also creates a challenge and increments the wait counter
+            // So we now have 2 unapproved challenges, meaning wait time = 2s * 2^1 = 4s
+            // Wait for the full backoff period plus buffer
+            Thread.sleep(5000);
+
+            // Ensure no pending challenges before next attempt
+            awaitNoPendingChallenges(deviceClient);
+
+            // Retry after waiting should succeed
+            BrowserSession secondSession = new BrowserSession(baseUri);
+            HtmlPage secondLoginPage = secondSession.startAuthorization("test-app");
+            HtmlPage secondWaitingPage = secondSession.submitLogin(secondLoginPage, username, WAIT_CHALLENGE_PASSWORD);
+            BrowserSession.DeviceChallenge secondChallenge = secondSession.extractDeviceChallenge(secondWaitingPage);
+            assertNotNull(secondChallenge, "Should be able to create challenge after waiting");
+
+            // Approve this challenge to clean up
+            String status = deviceClient.respondToChallenge(
+                    secondChallenge.confirmToken(), secondChallenge.challengeId(), PushMfaConstants.CHALLENGE_APPROVE);
+            assertEquals("approved", status);
+            secondSession.completePushChallenge(secondChallenge.formAction());
+        } finally {
+            adminClient.disablePushMfaWaitChallenge();
+            adminClient.configurePushMfaLoginChallengeTtlSeconds(
+                    PushMfaConstants.DEFAULT_LOGIN_CHALLENGE_TTL.toSeconds());
+            adminClient.clearUserAttribute(username, "push-mfa-wait-state");
+        }
+    }
+
+    @Test
+    void waitChallengeExponentialBackoffAndReset() throws Exception {
+        String username = WAIT_CHALLENGE_USER_5;
+        // Enroll device BEFORE enabling wait challenge to avoid creating wait state during enrollment
+        DeviceClient deviceClient = enrollDevice(username, WAIT_CHALLENGE_PASSWORD, DeviceKeyType.RSA);
+
+        // Increase max pending to handle any leftover challenges from previous tests
+        adminClient.configurePushMfaMaxPendingChallenges(10);
+        // Use very short wait times for testing (1s base, 10s max, 1s reset period for testing)
+        // Using user-attribute storage for persistence
+        adminClient.configurePushMfaWaitChallenge(
+                true, 1, 10, 1, PushMfaConstants.WAIT_CHALLENGE_STORAGE_USER_ATTRIBUTE);
+        adminClient.configurePushMfaLoginChallengeTtlSeconds(1);
+        try {
+            // First unapproved challenge - creates 1s wait
+            BrowserSession firstSession = new BrowserSession(baseUri);
+            HtmlPage firstLogin = firstSession.startAuthorization("test-app");
+            HtmlPage firstWaiting = firstSession.submitLogin(firstLogin, username, WAIT_CHALLENGE_PASSWORD);
+            firstSession.extractDeviceChallenge(firstWaiting);
+            awaitNoPendingChallenges(deviceClient);
+
+            // Wait for initial backoff (1s + buffer)
+            Thread.sleep(1500);
+
+            // Second unapproved challenge - creates 2s wait (exponential: 1s * 2^1)
+            BrowserSession secondSession = new BrowserSession(baseUri);
+            HtmlPage secondLogin = secondSession.startAuthorization("test-app");
+            HtmlPage secondWaiting = secondSession.submitLogin(secondLogin, username, WAIT_CHALLENGE_PASSWORD);
+            secondSession.extractDeviceChallenge(secondWaiting);
+            awaitNoPendingChallenges(deviceClient);
+
+            // Immediate retry should fail (need to wait 2s now)
+            BrowserSession thirdSession = new BrowserSession(baseUri);
+            HtmlPage thirdLogin = thirdSession.startAuthorization("test-app");
+            try {
+                HtmlPage thirdWaiting = thirdSession.submitLogin(thirdLogin, username, WAIT_CHALLENGE_PASSWORD);
+                String text = thirdWaiting.document().text().toLowerCase();
+                assertTrue(
+                        text.contains("wait") || text.contains("rate limit"),
+                        "Expected wait requirement after second unapproved, got: " + text);
+            } catch (IllegalStateException e) {
+                // This is also acceptable - blocked by rate limiting
+                assertTrue(
+                        e.getMessage().toLowerCase().contains("rate limit")
+                                || e.getMessage().toLowerCase().contains("wait"),
+                        "Expected rate limit error: " + e.getMessage());
+            }
+
+            // Wait for the 2s backoff period to pass
+            Thread.sleep(2500);
+
+            // Third unapproved challenge - creates 4s wait (exponential: 1s * 2^2)
+            BrowserSession fourthSession = new BrowserSession(baseUri);
+            HtmlPage fourthLogin = fourthSession.startAuthorization("test-app");
+            HtmlPage fourthWaiting = fourthSession.submitLogin(fourthLogin, username, WAIT_CHALLENGE_PASSWORD);
+            fourthSession.extractDeviceChallenge(fourthWaiting);
+            awaitNoPendingChallenges(deviceClient);
+
+            // Verify we now need to wait longer (4s)
+            // Only 1s has passed since challenge creation, immediate retry should fail
+            BrowserSession fifthSession = new BrowserSession(baseUri);
+            HtmlPage fifthLogin = fifthSession.startAuthorization("test-app");
+            try {
+                HtmlPage fifthWaiting = fifthSession.submitLogin(fifthLogin, username, WAIT_CHALLENGE_PASSWORD);
+                String text = fifthWaiting.document().text().toLowerCase();
+                assertTrue(
+                        text.contains("wait") || text.contains("rate limit"),
+                        "Expected longer wait requirement after third unapproved, got: " + text);
+            } catch (IllegalStateException e) {
+                assertTrue(
+                        e.getMessage().toLowerCase().contains("rate limit")
+                                || e.getMessage().toLowerCase().contains("wait"),
+                        "Expected rate limit error: " + e.getMessage());
+            }
+
+            // Wait for the 4s backoff period to fully pass
+            Thread.sleep(4500);
+
+            // Ensure no pending challenges before final attempt
+            awaitNoPendingChallenges(deviceClient);
+
+            // Now should be able to create a new challenge
+            BrowserSession finalSession = new BrowserSession(baseUri);
+            HtmlPage finalLogin = finalSession.startAuthorization("test-app");
+            HtmlPage finalWaiting = finalSession.submitLogin(finalLogin, username, WAIT_CHALLENGE_PASSWORD);
+            BrowserSession.DeviceChallenge finalChallenge = finalSession.extractDeviceChallenge(finalWaiting);
+            assertNotNull(finalChallenge, "Should be able to create challenge after waiting full backoff period");
+
+            // Approve to clean up
+            deviceClient.respondToChallenge(
+                    finalChallenge.confirmToken(), finalChallenge.challengeId(), PushMfaConstants.CHALLENGE_APPROVE);
+            finalSession.completePushChallenge(finalChallenge.formAction());
+        } finally {
+            adminClient.disablePushMfaWaitChallenge();
+            adminClient.configurePushMfaLoginChallengeTtlSeconds(
+                    PushMfaConstants.DEFAULT_LOGIN_CHALLENGE_TTL.toSeconds());
+            adminClient.clearUserAttribute(username, "push-mfa-wait-state");
+        }
+    }
+
+    @Test
+    void waitChallengeBuildsUpAndClearsOnApproval() throws Exception {
+        String username = WAIT_CHALLENGE_USER_6;
+        // Enroll device BEFORE enabling wait challenge to avoid creating wait state during enrollment
+        DeviceClient deviceClient = enrollDevice(username, WAIT_CHALLENGE_PASSWORD, DeviceKeyType.RSA);
+
+        // Increase max pending to handle any leftover challenges from previous tests
+        adminClient.configurePushMfaMaxPendingChallenges(10);
+        // Use short wait times for testing
+        adminClient.configurePushMfaWaitChallenge(
+                true, 1, 60, 1, PushMfaConstants.WAIT_CHALLENGE_STORAGE_USER_ATTRIBUTE);
+        adminClient.configurePushMfaLoginChallengeTtlSeconds(1);
+        try {
+            // Build up wait counter with multiple unapproved challenges
+            for (int i = 0; i < 3; i++) {
+                // Wait for any previous backoff to clear
+                int waitTime = (int) Math.pow(2, i) * 1000 + 500; // exponential backoff with buffer
+                Thread.sleep(waitTime);
+
+                // Ensure no pending challenges before creating new one
+                awaitNoPendingChallenges(deviceClient);
+
+                BrowserSession session = new BrowserSession(baseUri);
+                HtmlPage login = session.startAuthorization("test-app");
+                HtmlPage waiting = session.submitLogin(login, username, WAIT_CHALLENGE_PASSWORD);
+                session.extractDeviceChallenge(waiting);
+                awaitNoPendingChallenges(deviceClient);
+            }
+
+            // Now we have 3 unapproved challenges, wait time should be 4s (1s * 2^2)
+            // Wait for that backoff period
+            Thread.sleep(5000);
+
+            // Ensure no pending challenges before creating approval challenge
+            awaitNoPendingChallenges(deviceClient);
+
+            // Create a new challenge and APPROVE it
+            BrowserSession approvalSession = new BrowserSession(baseUri);
+            HtmlPage approvalLogin = approvalSession.startAuthorization("test-app");
+            HtmlPage approvalWaiting = approvalSession.submitLogin(approvalLogin, username, WAIT_CHALLENGE_PASSWORD);
+            BrowserSession.DeviceChallenge approvalChallenge = approvalSession.extractDeviceChallenge(approvalWaiting);
+
+            String status = deviceClient.respondToChallenge(
+                    approvalChallenge.confirmToken(),
+                    approvalChallenge.challengeId(),
+                    PushMfaConstants.CHALLENGE_APPROVE);
+            assertEquals("approved", status);
+            approvalSession.completePushChallenge(approvalChallenge.formAction());
+
+            // After approval, wait counter should be reset
+            // Wait for the approval to fully process and challenge to be cleared
+            awaitNoPendingChallenges(deviceClient);
+
+            // Create another challenge - should work without waiting since counter was reset
+            BrowserSession afterApprovalSession = new BrowserSession(baseUri);
+            HtmlPage afterApprovalLogin = afterApprovalSession.startAuthorization("test-app");
+            HtmlPage afterApprovalWaiting =
+                    afterApprovalSession.submitLogin(afterApprovalLogin, username, WAIT_CHALLENGE_PASSWORD);
+            BrowserSession.DeviceChallenge afterApprovalChallenge =
+                    afterApprovalSession.extractDeviceChallenge(afterApprovalWaiting);
+
+            assertNotNull(
+                    afterApprovalChallenge,
+                    "Should be able to create challenge immediately after approval resets the counter");
+
+            // Clean up
+            deviceClient.respondToChallenge(
+                    afterApprovalChallenge.confirmToken(),
+                    afterApprovalChallenge.challengeId(),
+                    PushMfaConstants.CHALLENGE_DENY);
+        } finally {
+            adminClient.disablePushMfaWaitChallenge();
+            adminClient.configurePushMfaLoginChallengeTtlSeconds(
+                    PushMfaConstants.DEFAULT_LOGIN_CHALLENGE_TTL.toSeconds());
+            adminClient.clearUserAttribute(username, "push-mfa-wait-state");
         }
     }
 
