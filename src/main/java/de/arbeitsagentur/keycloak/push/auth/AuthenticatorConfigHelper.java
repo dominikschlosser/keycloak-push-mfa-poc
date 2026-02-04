@@ -117,4 +117,45 @@ public final class AuthenticatorConfigHelper {
         }
         return value.trim();
     }
+
+    // Wait challenge rate limiting configuration helpers
+
+    public static boolean isWaitChallengeEnabled(AuthenticatorConfigModel config) {
+        return parseBoolean(
+                config,
+                PushMfaConstants.WAIT_CHALLENGE_ENABLED_CONFIG,
+                PushMfaConstants.DEFAULT_WAIT_CHALLENGE_ENABLED);
+    }
+
+    public static Duration getWaitChallengeBase(AuthenticatorConfigModel config) {
+        int seconds = parsePositiveInt(
+                config,
+                PushMfaConstants.WAIT_CHALLENGE_BASE_SECONDS_CONFIG,
+                PushMfaConstants.DEFAULT_WAIT_CHALLENGE_BASE_SECONDS);
+        return Duration.ofSeconds(seconds);
+    }
+
+    public static Duration getWaitChallengeMax(AuthenticatorConfigModel config) {
+        int seconds = parsePositiveInt(
+                config,
+                PushMfaConstants.WAIT_CHALLENGE_MAX_SECONDS_CONFIG,
+                PushMfaConstants.DEFAULT_WAIT_CHALLENGE_MAX_SECONDS);
+        return Duration.ofSeconds(seconds);
+    }
+
+    public static Duration getWaitChallengeResetPeriod(AuthenticatorConfigModel config) {
+        int hours = parsePositiveInt(
+                config,
+                PushMfaConstants.WAIT_CHALLENGE_RESET_HOURS_CONFIG,
+                PushMfaConstants.DEFAULT_WAIT_CHALLENGE_RESET_HOURS);
+        return Duration.ofHours(hours);
+    }
+
+    public static String getWaitChallengeStorageProvider(AuthenticatorConfigModel config) {
+        String value = getConfigValue(config, PushMfaConstants.WAIT_CHALLENGE_STORAGE_PROVIDER_CONFIG);
+        if (value == null) {
+            return PushMfaConstants.DEFAULT_WAIT_CHALLENGE_STORAGE_PROVIDER;
+        }
+        return value;
+    }
 }

@@ -14,6 +14,7 @@ A Keycloak extension that adds push-based multi-factor authentication, similar t
 - [App Implementation Notes](#app-implementation-notes) — Guide for mobile app developers
 - [Push Notification SPI](#push-notification-spi) — Implementing custom push providers
 - [Push MFA Event SPI](#push-mfa-event-spi) — Reacting to push MFA events
+- [Wait Challenge Rate Limiting](#wait-challenge-rate-limiting) — Exponential backoff for unapproved challenges
 - [Customizing the UI](#customizing-the-keycloak-ui) — Theme customization
 - [Security](#security-guarantees-and-mobile-obligations) — Security model and requirements
 - [Mobile Mock](#mobile-mock-for-push-mfa-enrollment-and-login) — Testing without a real mobile app
@@ -688,6 +689,11 @@ Configure these in the authentication flow execution settings.
 | `userVerificationPinLength` | `4` | PIN length when using `pin` verification (max: 12) |
 | `sameDeviceIncludeUserVerification` | `false` | Include verification answer in same-device deep links |
 | `loginAppUniversalLink` | `my-secure://confirm` | Deep link scheme for same-device login |
+| `waitChallengeEnabled` | `false` | Enable exponential backoff rate limiting (see [Wait Challenge Rate Limiting](#wait-challenge-rate-limiting)) |
+| `waitChallengeBaseSeconds` | `10` | Initial wait time after first unapproved challenge |
+| `waitChallengeMaxSeconds` | `3600` | Maximum wait time cap (1 hour) |
+| `waitChallengeResetHours` | `24` | Hours until automatic reset of wait counter |
+| `waitChallengeStorageProvider` | `single-use-object` | Storage backend: `single-use-object` or `user-attribute` |
 
 **User Verification Modes:**
 
@@ -929,6 +935,88 @@ Your custom listener will run alongside the built-in listeners (Keycloak event b
 - Each listener is wrapped in exception handling to prevent one failing listener from affecting others
 - Event objects are immutable Java records, safe to pass between threads
 - For heavy processing (webhooks, external APIs), implement async handling in your listener
+
+## Wait Challenge Rate Limiting
+
+The extension includes an optional rate limiting feature that prevents abuse by requiring users to wait between authentication attempts when they don't approve their push challenges. This uses exponential backoff: the wait time doubles with each consecutive unapproved challenge.
+
+### How It Works
+
+1. **First unapproved challenge**: User must wait the base time (default 10s) before requesting another
+2. **Second unapproved**: Wait time doubles (20s)
+3. **Third unapproved**: Wait time doubles again (40s)
+4. **And so on...** until reaching the configured maximum (default 1 hour)
+
+The wait counter resets when:
+- The user **approves** a challenge successfully
+- The configured reset period elapses (default 24 hours since the first unapproved challenge)
+
+### Enabling Wait Challenge Rate Limiting
+
+Configure the authenticator in the Admin Console under **Authentication → Flows → [your flow] → ⚙️ Config**:
+
+| Option | Default | Description |
+|--------|---------|-------------|
+| `waitChallengeEnabled` | `false` | Enable/disable the feature |
+| `waitChallengeBaseSeconds` | `10` | Initial wait time in seconds |
+| `waitChallengeMaxSeconds` | `3600` | Maximum wait time cap (1 hour) |
+| `waitChallengeResetHours` | `24` | Hours until automatic reset |
+| `waitChallengeStorageProvider` | `single-use-object` | Storage backend (see below) |
+
+### Wait Time Progression
+
+With default settings (base=10s, max=3600s):
+
+| Consecutive Unapproved | Wait Time |
+|------------------------|-----------|
+| 1 | 10 seconds |
+| 2 | 20 seconds |
+| 3 | 40 seconds |
+| 4 | 80 seconds |
+| 5 | 160 seconds (~2.5 min) |
+| 6 | 320 seconds (~5 min) |
+| 7 | 640 seconds (~10 min) |
+| 8 | 1280 seconds (~21 min) |
+| 9+ | 3600 seconds (capped at 1 hour) |
+
+### Storage Providers
+
+The wait state can be stored using two different backends:
+
+#### `single-use-object` (Default)
+
+Uses Keycloak's `SingleUseObjectProvider` for in-memory storage with automatic TTL-based expiry.
+
+| Aspect | Behavior |
+|--------|----------|
+| **Performance** | Fast (in-memory) |
+| **Survives restart** | No (state lost on pod restart) |
+| **Cleanup** | Automatic via TTL |
+| **Best for** | Lower traffic, simpler setups, short reset periods |
+
+#### `user-attribute`
+
+Stores wait state as a JSON user attribute in the database.
+
+| Aspect | Behavior |
+|--------|----------|
+| **Performance** | Database write per update |
+| **Survives restart** | Yes (persisted in DB) |
+| **Cleanup** | On-demand (deleted when expired state is read) |
+| **Best for** | High traffic, must survive restarts, auditability |
+
+### Interaction with Max Pending Challenges
+
+When wait challenge rate limiting is enabled, the `maxPendingChallenges` setting is automatically forced to `1`. This prevents users from opening multiple browser tabs to bypass the rate limit.
+
+### User Experience
+
+When rate limited, users see a waiting page with:
+- A countdown timer showing remaining wait time
+- A disabled "Retry" button that enables when the wait expires
+- A message explaining why they need to wait
+
+The template is `push-wait-required.ftl` and can be customized like other theme resources.
 
 ## Customizing the Keycloak UI
 

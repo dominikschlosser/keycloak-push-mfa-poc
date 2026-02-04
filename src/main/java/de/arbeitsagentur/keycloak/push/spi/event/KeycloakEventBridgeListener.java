@@ -16,11 +16,11 @@
 
 package de.arbeitsagentur.keycloak.push.spi.event;
 
+import de.arbeitsagentur.keycloak.push.util.PushMfaConstants;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.function.Consumer;
 import org.jboss.logging.Logger;
-import de.arbeitsagentur.keycloak.push.util.PushMfaConstants;
 import org.keycloak.events.Details;
 import org.keycloak.events.EventBuilder;
 import org.keycloak.events.EventType;
@@ -144,7 +144,13 @@ class KeycloakEventBridgeListener implements PushMfaEventListener {
                 .add(DETAIL_CREDENTIAL_ID, event.credentialId())
                 .add(DETAIL_REASON, event.reason());
 
-        emit(event.realmId(), event.userId(), null, EventType.UPDATE_CREDENTIAL_ERROR, ERROR_KEY_ROTATION_DENIED, details);
+        emit(
+                event.realmId(),
+                event.userId(),
+                null,
+                EventType.UPDATE_CREDENTIAL_ERROR,
+                ERROR_KEY_ROTATION_DENIED,
+                details);
     }
 
     @Override
@@ -159,7 +165,8 @@ class KeycloakEventBridgeListener implements PushMfaEventListener {
         emit(event.realmId(), event.userId(), null, EventType.LOGIN_ERROR, ERROR_DPOP_AUTH_FAILED, details);
     }
 
-    private void emit(String realmId, String userId, String clientId, EventType type, String error, EventDetails details) {
+    private void emit(
+            String realmId, String userId, String clientId, EventType type, String error, EventDetails details) {
         if (realmId == null) {
             LOG.debug("Cannot emit Keycloak event: realmId is null");
             return;
@@ -177,7 +184,8 @@ class KeycloakEventBridgeListener implements PushMfaEventListener {
             return;
         }
 
-        EventBuilder builder = new EventBuilder(realm, session, session.getContext().getConnection());
+        EventBuilder builder =
+                new EventBuilder(realm, session, session.getContext().getConnection());
         builder.event(event.eventType());
 
         event.details().forEach((key, value) -> {

@@ -1,0 +1,2 @@
+de.arbeitsagentur.keycloak.push.spi.waitchallenge.SingleUseObjectWaitChallengeStateProviderFactory
+de.arbeitsagentur.keycloak.push.spi.waitchallenge.UserAttributeWaitChallengeStateProviderFactory

@@ -61,9 +61,15 @@ class KeycloakEventBridgeListenerTest {
     @Test
     void onChallengeCreated() {
         listener.onChallengeCreated(new ChallengeCreatedEvent(
-                "test-realm", "user-1", "chal-1", PushChallenge.Type.AUTHENTICATION,
-                "cred-1", "client-1", PushChallenge.UserVerificationMode.NUMBER_MATCH,
-                Instant.now().plusSeconds(120), Instant.now()));
+                "test-realm",
+                "user-1",
+                "chal-1",
+                PushChallenge.Type.AUTHENTICATION,
+                "cred-1",
+                "client-1",
+                PushChallenge.UserVerificationMode.NUMBER_MATCH,
+                Instant.now().plusSeconds(120),
+                Instant.now()));
 
         assertEquals(1, captured.size());
         var event = captured.get(0);
@@ -79,8 +85,14 @@ class KeycloakEventBridgeListenerTest {
     @Test
     void onChallengeAccepted() {
         listener.onChallengeAccepted(new ChallengeAcceptedEvent(
-                "test-realm", "user-1", "chal-1", PushChallenge.Type.AUTHENTICATION,
-                "cred-1", "client-1", "device-1", Instant.now()));
+                "test-realm",
+                "user-1",
+                "chal-1",
+                PushChallenge.Type.AUTHENTICATION,
+                "cred-1",
+                "client-1",
+                "device-1",
+                Instant.now()));
 
         var event = captured.get(0);
         assertEquals(EventType.LOGIN, event.eventType());
@@ -92,8 +104,14 @@ class KeycloakEventBridgeListenerTest {
     @Test
     void onChallengeDenied() {
         listener.onChallengeDenied(new ChallengeDeniedEvent(
-                "test-realm", "user-1", "chal-1", PushChallenge.Type.AUTHENTICATION,
-                "cred-1", "client-1", "device-1", Instant.now()));
+                "test-realm",
+                "user-1",
+                "chal-1",
+                PushChallenge.Type.AUTHENTICATION,
+                "cred-1",
+                "client-1",
+                "device-1",
+                Instant.now()));
 
         var event = captured.get(0);
         assertEquals(EventType.LOGIN_ERROR, event.eventType());
@@ -137,8 +155,8 @@ class KeycloakEventBridgeListenerTest {
 
     @Test
     void onKeyRotationDenied() {
-        listener.onKeyRotationDenied(new KeyRotationDeniedEvent(
-                "test-realm", "user-1", "cred-1", "Invalid key", Instant.now()));
+        listener.onKeyRotationDenied(
+                new KeyRotationDeniedEvent("test-realm", "user-1", "cred-1", "Invalid key", Instant.now()));
 
         var event = captured.get(0);
         assertEquals(EventType.UPDATE_CREDENTIAL_ERROR, event.eventType());
