@@ -47,11 +47,13 @@ class PushMfaAuthenticatorTest {
 
     @Test
     void numberMatchSelectionIsApproximatelyUniform() {
+        // Fixed seed for reproducible test failures
+        Random seededRandom = new Random(42);
         int samples = 150;
         int[] counts = new int[3];
         for (int attempt = 0; attempt < samples; attempt++) {
-            List<String> options = UserVerificationHelper.generateNumberMatchOptions();
-            String displayed = UserVerificationHelper.selectNumberMatchValue(options);
+            List<String> options = UserVerificationHelper.generateNumberMatchOptions(seededRandom);
+            String displayed = UserVerificationHelper.selectNumberMatchValue(options, seededRandom);
             int index = options.indexOf(displayed);
             assertTrue(index >= 0, () -> "Displayed value not found in options: " + displayed + " vs " + options);
             counts[index]++;

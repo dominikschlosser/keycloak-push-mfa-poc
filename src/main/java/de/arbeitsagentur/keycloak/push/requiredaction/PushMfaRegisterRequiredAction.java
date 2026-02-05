@@ -45,6 +45,31 @@ public class PushMfaRegisterRequiredAction implements RequiredActionProvider, Cr
 
     private static final SecureRandom RANDOM = new SecureRandom();
 
+    /**
+     * Creates a new PushChallengeStore. Override to provide a custom store implementation.
+     *
+     * @param session the Keycloak session
+     * @return the challenge store
+     */
+    protected PushChallengeStore createChallengeStore(KeycloakSession session) {
+        return new PushChallengeStore(session);
+    }
+
+    /**
+     * Called after a new enrollment challenge has been created. Override to add custom behavior.
+     *
+     * @param context the required action context
+     * @param challenge the created challenge
+     */
+    protected void onEnrollmentChallengeCreated(RequiredActionContext context, PushChallenge challenge) {}
+
+    /**
+     * Called after enrollment has been completed. Override to add custom behavior.
+     *
+     * @param context the required action context
+     */
+    protected void onEnrollmentCompleted(RequiredActionContext context) {}
+
     @Override
     public String getCredentialType(KeycloakSession session, AuthenticationSessionModel authSession) {
         return PushMfaConstants.CREDENTIAL_TYPE;
@@ -63,7 +88,7 @@ public class PushMfaRegisterRequiredAction implements RequiredActionProvider, Cr
     @Override
     public void requiredActionChallenge(RequiredActionContext context) {
         AuthenticationSessionModel authSession = context.getAuthenticationSession();
-        PushChallengeStore store = new PushChallengeStore(context.getSession());
+        PushChallengeStore store = createChallengeStore(context.getSession());
         PushChallenge challenge = ensureWatchableChallenge(
                 context, authSession, store, fetchOrCreateChallenge(context, authSession, store, false));
 
@@ -81,7 +106,7 @@ public class PushMfaRegisterRequiredAction implements RequiredActionProvider, Cr
     public void processAction(RequiredActionContext context) {
         MultivaluedMap<String, String> formData = context.getHttpRequest().getDecodedFormParameters();
         AuthenticationSessionModel authSession = context.getAuthenticationSession();
-        PushChallengeStore store = new PushChallengeStore(context.getSession());
+        PushChallengeStore store = createChallengeStore(context.getSession());
 
         boolean checkOnly = formData.containsKey("check");
 
@@ -91,8 +116,7 @@ public class PushMfaRegisterRequiredAction implements RequiredActionProvider, Cr
             return;
         }
 
-        boolean hasCredential =
-                !PushCredentialService.getActiveCredentials(context.getUser()).isEmpty();
+        boolean hasCredential = hasActiveCredential(context);
 
         if (!hasCredential) {
             if (checkOnly) {
@@ -115,7 +139,16 @@ public class PushMfaRegisterRequiredAction implements RequiredActionProvider, Cr
         }
 
         cleanupChallenge(authSession, store);
+        onEnrollmentCompleted(context);
         context.success();
+    }
+
+    /**
+     * Checks if the user has an active push credential.
+     * Override to customize credential checking.
+     */
+    protected boolean hasActiveCredential(RequiredActionContext context) {
+        return !PushCredentialService.getActiveCredentials(context.getUser()).isEmpty();
     }
 
     @Override
@@ -148,7 +181,11 @@ public class PushMfaRegisterRequiredAction implements RequiredActionProvider, Cr
         return form.createForm("push-register.ftl");
     }
 
-    private PushChallenge fetchOrCreateChallenge(
+    /**
+     * Fetches an existing challenge or creates a new one.
+     * Override to customize challenge creation.
+     */
+    protected PushChallenge fetchOrCreateChallenge(
             RequiredActionContext context,
             AuthenticationSessionModel authSession,
             PushChallengeStore store,
@@ -169,39 +206,58 @@ public class PushMfaRegisterRequiredAction implements RequiredActionProvider, Cr
         }
 
         if (challenge == null) {
-            byte[] nonceBytes = new byte[PushMfaConstants.NONCE_BYTES_SIZE];
-            RANDOM.nextBytes(nonceBytes);
-            String watchSecret = KeycloakModelUtils.generateId();
-            challenge = store.create(
-                    context.getRealm().getId(),
-                    context.getUser().getId(),
-                    nonceBytes,
-                    PushChallenge.Type.ENROLLMENT,
-                    challengeTtl,
-                    null,
-                    null,
-                    watchSecret,
-                    null);
-            authSession.setAuthNote(PushMfaConstants.ENROLL_CHALLENGE_NOTE, challenge.getId());
-
-            PushMfaEventService.fire(
-                    context.getSession(),
-                    new ChallengeCreatedEvent(
-                            challenge.getRealmId(),
-                            challenge.getUserId(),
-                            challenge.getId(),
-                            challenge.getType(),
-                            challenge.getCredentialId(),
-                            challenge.getClientId(),
-                            challenge.getUserVerificationMode(),
-                            challenge.getExpiresAt(),
-                            Instant.now()));
+            challenge = createNewEnrollmentChallenge(context, authSession, store, challengeTtl);
         }
 
         return challenge;
     }
 
-    private void cleanupChallenge(AuthenticationSessionModel authSession, PushChallengeStore store) {
+    /**
+     * Creates a new enrollment challenge.
+     * Override to customize challenge creation parameters.
+     */
+    protected PushChallenge createNewEnrollmentChallenge(
+            RequiredActionContext context,
+            AuthenticationSessionModel authSession,
+            PushChallengeStore store,
+            Duration challengeTtl) {
+        byte[] nonceBytes = new byte[PushMfaConstants.NONCE_BYTES_SIZE];
+        RANDOM.nextBytes(nonceBytes);
+        String watchSecret = KeycloakModelUtils.generateId();
+        PushChallenge challenge = store.create(
+                context.getRealm().getId(),
+                context.getUser().getId(),
+                nonceBytes,
+                PushChallenge.Type.ENROLLMENT,
+                challengeTtl,
+                null,
+                null,
+                watchSecret,
+                null);
+        authSession.setAuthNote(PushMfaConstants.ENROLL_CHALLENGE_NOTE, challenge.getId());
+
+        PushMfaEventService.fire(
+                context.getSession(),
+                new ChallengeCreatedEvent(
+                        challenge.getRealmId(),
+                        challenge.getUserId(),
+                        challenge.getId(),
+                        challenge.getType(),
+                        challenge.getCredentialId(),
+                        challenge.getClientId(),
+                        challenge.getUserVerificationMode(),
+                        challenge.getExpiresAt(),
+                        Instant.now()));
+
+        onEnrollmentChallengeCreated(context, challenge);
+        return challenge;
+    }
+
+    /**
+     * Cleans up an existing challenge.
+     * Override to customize cleanup behavior.
+     */
+    protected void cleanupChallenge(AuthenticationSessionModel authSession, PushChallengeStore store) {
         String challengeId = authSession.getAuthNote(PushMfaConstants.ENROLL_CHALLENGE_NOTE);
         if (challengeId != null) {
             store.remove(challengeId);
@@ -210,7 +266,11 @@ public class PushMfaRegisterRequiredAction implements RequiredActionProvider, Cr
         authSession.removeAuthNote(PushMfaConstants.ENROLL_SSE_TOKEN_NOTE);
     }
 
-    private PushChallenge ensureWatchableChallenge(
+    /**
+     * Ensures the challenge has a watch secret for SSE events.
+     * Override to customize watchable challenge handling.
+     */
+    protected PushChallenge ensureWatchableChallenge(
             RequiredActionContext context,
             AuthenticationSessionModel authSession,
             PushChallengeStore store,
@@ -226,7 +286,11 @@ public class PushMfaRegisterRequiredAction implements RequiredActionProvider, Cr
         return ensured;
     }
 
-    private String buildEnrollmentEventsUrl(RequiredActionContext context, PushChallenge challenge) {
+    /**
+     * Builds the URL for enrollment SSE events.
+     * Override to customize the events URL.
+     */
+    protected String buildEnrollmentEventsUrl(RequiredActionContext context, PushChallenge challenge) {
         String watchSecret = challenge.getWatchSecret();
         if (StringUtil.isBlank(watchSecret)) {
             return null;
@@ -245,7 +309,11 @@ public class PushMfaRegisterRequiredAction implements RequiredActionProvider, Cr
                 .toString();
     }
 
-    private Duration resolveEnrollmentTtl(RequiredActionContext context) {
+    /**
+     * Resolves the enrollment challenge TTL from configuration.
+     * Override to customize TTL resolution.
+     */
+    protected Duration resolveEnrollmentTtl(RequiredActionContext context) {
         RequiredActionConfigModel config = context.getConfig();
         if (config == null || config.getConfig() == null) {
             return PushMfaConstants.DEFAULT_ENROLLMENT_CHALLENGE_TTL;
@@ -262,7 +330,11 @@ public class PushMfaRegisterRequiredAction implements RequiredActionProvider, Cr
         }
     }
 
-    private String resolveAppUniversalLink(RequiredActionContext context) {
+    /**
+     * Resolves the app universal link from configuration.
+     * Override to customize link resolution.
+     */
+    protected String resolveAppUniversalLink(RequiredActionContext context) {
         RequiredActionConfigModel config = context.getConfig();
         if (config == null || config.getConfig() == null) {
             return PushMfaConstants.DEFAULT_APP_UNIVERSAL_LINK + "enroll";

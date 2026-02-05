@@ -17,7 +17,7 @@ Configure these in the authentication flow execution settings.
 | Option | Default | Description |
 |--------|---------|-------------|
 | `loginChallengeTtlSeconds` | `240` | How long the login challenge / push notification is valid (in seconds) |
-| `maxPendingChallenges` | `1` | Maximum concurrent login attempts per user. Set to `1` to prevent parallel logins |
+| `maxPendingChallenges` | `1` | Maximum concurrent login attempts per user (see [Challenge Behavior](#challenge-behavior) below) |
 | `userVerification` | `none` | Extra verification step (see below) |
 | `userVerificationPinLength` | `4` | PIN length when using `pin` verification (max: 12) |
 | `sameDeviceIncludeUserVerification` | `false` | Include verification answer in same-device deep links |
@@ -34,6 +34,18 @@ Configure these in the authentication flow execution settings.
 | `none` | Nothing extra | Just tap approve/deny |
 | `number-match` | A number (0–99) | Select the matching number from 3 options |
 | `pin` | A PIN code | Enter the PIN shown in browser |
+
+### Challenge Behavior
+
+Understanding how `maxPendingChallenges` interacts with credentials:
+
+- **One challenge per credential**: Each registered device/credential can have at most ONE pending challenge at a time. Creating a new challenge for the same credential automatically replaces the previous one. This enables the "retry" functionality where users can request a new push notification without waiting for the old one to expire.
+
+- **Multiple credentials**: If a user has multiple registered devices (credentials), `maxPendingChallenges` limits how many concurrent challenges can exist across all credentials. For example, with `maxPendingChallenges=2` and 3 registered devices, only 2 devices can have active challenges simultaneously.
+
+- **Recommended setting**: Keep `maxPendingChallenges=1` (the default) for most deployments. This ensures only one active login attempt at a time per user, which simplifies the security model and user experience.
+
+- **Wait challenge interaction**: When `waitChallengeEnabled=true`, `maxPendingChallenges` is automatically forced to `1` regardless of configuration to ensure rate limiting is effective.
 
 ## Required Action Options (`push-mfa-register`)
 
@@ -59,6 +71,7 @@ JAVA_OPTS_APPEND="-Dkeycloak.push-mfa.input.maxJwtLength=8192 -Dkeycloak.push-mf
 |----------|---------|-------|-------------|
 | `keycloak.push-mfa.dpop.jtiTtlSeconds` | `300` | 30–3600 | How long used `jti` values are remembered |
 | `keycloak.push-mfa.dpop.jtiMaxLength` | `128` | 16–512 | Maximum `jti` string length |
+| `keycloak.push-mfa.dpop.iatToleranceSeconds` | `120` | 30–600 | Allowed clock skew for DPoP proof `iat` timestamp |
 
 ### Input Size Limits
 

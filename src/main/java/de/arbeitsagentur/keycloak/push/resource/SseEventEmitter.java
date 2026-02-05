@@ -114,6 +114,16 @@ public final class SseEventEmitter {
     }
 
     public void sendStatusEvent(SseEventSink sink, Sse sse, String status, PushChallenge challenge, EventType type) {
+        sendStatusEvent(sink, sse, status, challenge, type, null);
+    }
+
+    public void sendStatusEvent(
+            SseEventSink sink,
+            Sse sse,
+            String status,
+            PushChallenge challenge,
+            EventType type,
+            Integer retryAfterSeconds) {
         if (sink.isClosed()) {
             return;
         }
@@ -124,6 +134,9 @@ public final class SseEventEmitter {
 
             Map<String, Object> payload = new HashMap<>();
             payload.put("status", status);
+            if (retryAfterSeconds != null) {
+                payload.put("retryAfterSeconds", retryAfterSeconds);
+            }
             if (challenge != null) {
                 payload.put("challengeId", challenge.getId());
                 payload.put("expiresAt", challenge.getExpiresAt().toString());

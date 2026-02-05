@@ -16,6 +16,7 @@
 
 package de.arbeitsagentur.keycloak.push;
 
+import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -25,7 +26,9 @@ import de.arbeitsagentur.keycloak.push.challenge.PushChallengeStatus;
 import de.arbeitsagentur.keycloak.push.challenge.PushChallengeStore;
 import java.time.Duration;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.keycloak.models.KeycloakSession;
@@ -82,7 +85,7 @@ class PushChallengeStoreTest {
                 "watch-secret",
                 "root-session");
 
-        Thread.sleep(25);
+        Thread.sleep(100);
         store.resolve(challenge.getId(), PushChallengeStatus.APPROVED);
 
         PushChallenge updated = store.get(challenge.getId()).orElseThrow();
@@ -97,6 +100,89 @@ class PushChallengeStoreTest {
 
         PushChallenge updated = store.get(challenge.getId()).orElseThrow();
         assertEquals(PushChallengeStatus.APPROVED, updated.getStatus());
+    }
+
+    @Test
+    void get_returnsEmpty_whenChallengeNotFound() {
+        Optional<PushChallenge> result = store.get("non-existent-challenge-id");
+
+        assertTrue(result.isEmpty());
+    }
+
+    @Test
+    void remove_whenChallengeDoesNotExist() {
+        assertDoesNotThrow(() -> store.remove("non-existent-challenge-id"));
+    }
+
+    @Test
+    void findPendingAuthenticationForUser_returnsEmptyList_whenNoIndex() {
+        List<PushChallenge> result = store.findPendingAuthenticationForUser(REALM_ID, "user-without-challenges");
+
+        assertTrue(result.isEmpty());
+    }
+
+    @Test
+    void userVerificationMode_persistedCorrectly() {
+        PushChallenge pinChallenge = store.create(
+                REALM_ID,
+                USER_ID,
+                new byte[] {1, 2, 3},
+                PushChallenge.Type.AUTHENTICATION,
+                Duration.ofSeconds(120),
+                "cred-1",
+                "client",
+                "watch-secret",
+                "root-session",
+                PushChallenge.UserVerificationMode.PIN,
+                "1234",
+                List.of());
+
+        PushChallenge retrievedPin = store.get(pinChallenge.getId()).orElseThrow();
+        assertEquals(PushChallenge.UserVerificationMode.PIN, retrievedPin.getUserVerificationMode());
+        assertEquals("1234", retrievedPin.getUserVerificationValue());
+
+        PushChallenge numberMatchChallenge = store.create(
+                REALM_ID,
+                "user-id-2",
+                new byte[] {4, 5, 6},
+                PushChallenge.Type.AUTHENTICATION,
+                Duration.ofSeconds(120),
+                "cred-2",
+                "client",
+                "watch-secret",
+                "root-session",
+                PushChallenge.UserVerificationMode.NUMBER_MATCH,
+                "42",
+                List.of("12", "42", "87"));
+
+        PushChallenge retrievedNumberMatch =
+                store.get(numberMatchChallenge.getId()).orElseThrow();
+        assertEquals(PushChallenge.UserVerificationMode.NUMBER_MATCH, retrievedNumberMatch.getUserVerificationMode());
+        assertEquals("42", retrievedNumberMatch.getUserVerificationValue());
+    }
+
+    @Test
+    void userVerificationOptions_persistedCorrectly() {
+        List<String> options = List.of("11", "22", "33");
+
+        PushChallenge challenge = store.create(
+                REALM_ID,
+                USER_ID,
+                new byte[] {1, 2, 3},
+                PushChallenge.Type.AUTHENTICATION,
+                Duration.ofSeconds(120),
+                "cred-1",
+                "client",
+                "watch-secret",
+                "root-session",
+                PushChallenge.UserVerificationMode.NUMBER_MATCH,
+                "22",
+                options);
+
+        PushChallenge retrieved = store.get(challenge.getId()).orElseThrow();
+        assertEquals(PushChallenge.UserVerificationMode.NUMBER_MATCH, retrieved.getUserVerificationMode());
+        assertEquals("22", retrieved.getUserVerificationValue());
+        assertEquals(options, retrieved.getUserVerificationOptions());
     }
 
     private PushChallenge createAuthChallenge(String credentialId) {

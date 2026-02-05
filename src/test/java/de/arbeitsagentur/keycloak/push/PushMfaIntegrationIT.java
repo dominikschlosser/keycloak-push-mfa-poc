@@ -51,6 +51,7 @@ import java.util.HashSet;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
+import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -62,6 +63,14 @@ import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 import org.testcontainers.utility.MountableFile;
 
+/**
+ * Integration tests for the Push MFA authenticator extension.
+ *
+ * <p>Test naming convention: Descriptive camelCase that describes the scenario and expected outcome
+ * (e.g., {@code deviceEnrollsAndApprovesLogin}, {@code waitChallengeBlocksImmediateRetry}).
+ * This differs from PushMfaSecurityIT which uses @Nested classes with @DisplayName for
+ * organization by security category.
+ */
 @Testcontainers
 @ExtendWith(ContainerLogWatcher.class)
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
@@ -113,6 +122,28 @@ class PushMfaIntegrationIT {
         adminClient.ensureUser(WAIT_CHALLENGE_USER_4, WAIT_CHALLENGE_PASSWORD);
         adminClient.ensureUser(WAIT_CHALLENGE_USER_5, WAIT_CHALLENGE_PASSWORD);
         adminClient.ensureUser(WAIT_CHALLENGE_USER_6, WAIT_CHALLENGE_PASSWORD);
+    }
+
+    @AfterAll
+    void cleanupWaitChallengeUsers() {
+        // Clean up dedicated wait challenge test users to reduce DB bloat
+        // These users are created in @BeforeAll and only used by wait challenge tests
+        String[] waitChallengeUsers = {
+            WAIT_CHALLENGE_USER_1,
+            WAIT_CHALLENGE_USER_2,
+            WAIT_CHALLENGE_USER_3,
+            WAIT_CHALLENGE_USER_4,
+            WAIT_CHALLENGE_USER_5,
+            WAIT_CHALLENGE_USER_6
+        };
+        for (String username : waitChallengeUsers) {
+            try {
+                adminClient.deleteUser(username);
+            } catch (Exception e) {
+                // Log but don't fail - cleanup is best effort
+                System.err.println("Failed to delete wait challenge user " + username + ": " + e.getMessage());
+            }
+        }
     }
 
     @BeforeEach
@@ -399,9 +430,20 @@ class PushMfaIntegrationIT {
         assertEquals("approved", status);
         try {
             pushSession.completePushChallenge(refreshedChallenge.formAction());
-        } catch (AssertionError | IllegalStateException ignored) {
-            // The refreshed browser request may already be past the login step; it's enough that the challenge was
-            // approved and no error was returned.
+        } catch (AssertionError | IllegalStateException e) {
+            // EXPECTED: After refreshing the push challenge page, the browser session state may be
+            // desynchronized from the server's authentication flow state. When the device approves
+            // the refreshed challenge, Keycloak may have already advanced the user's session past
+            // the MFA step (due to the approval), causing completePushChallenge to fail because:
+            // - The form action URL may no longer be valid (AssertionError from redirect detection)
+            // - The session may already be authenticated (IllegalStateException from unexpected page)
+            //
+            // This is acceptable because the test's primary goal is to verify that:
+            // 1. Refreshing creates a new challenge ID (asserted above)
+            // 2. The device can successfully approve the refreshed challenge (assertEquals("approved"))
+            // The browser's ability to complete the flow is a secondary concern in this race condition.
+            System.out.println("INFO: completePushChallenge after refresh threw expected exception: "
+                    + e.getClass().getSimpleName() + " - " + e.getMessage());
         }
     }
 
@@ -527,10 +569,8 @@ class PushMfaIntegrationIT {
                 "Second session should be blocked while a challenge is pending");
         String message = error.getMessage().toLowerCase();
         assertTrue(
-                message.contains("pending push approval")
-                        || message.contains("too many requests")
-                        || message.contains("429"),
-                "Error message should mention the pending approval");
+                message.contains("pending push approval"),
+                "Expected error message to contain 'pending push approval' but got: " + error.getMessage());
 
         deviceClient.respondToChallenge(
                 firstChallenge.confirmToken(), firstChallenge.challengeId(), PushMfaConstants.CHALLENGE_DENY);
@@ -821,8 +861,8 @@ class PushMfaIntegrationIT {
 
             // The retry attempt above also creates a challenge and increments the wait counter
             // So we now have 2 unapproved challenges, meaning wait time = 2s * 2^1 = 4s
-            // Wait for the full backoff period plus buffer
-            Thread.sleep(5000);
+            // Wait for the full backoff period plus small buffer
+            Thread.sleep(4500);
 
             // Ensure no pending challenges before next attempt
             awaitNoPendingChallenges(deviceClient);
@@ -960,7 +1000,7 @@ class PushMfaIntegrationIT {
             // Build up wait counter with multiple unapproved challenges
             for (int i = 0; i < 3; i++) {
                 // Wait for any previous backoff to clear
-                int waitTime = (int) Math.pow(2, i) * 1000 + 500; // exponential backoff with buffer
+                int waitTime = (int) Math.pow(2, i) * 1000 + 200; // exponential backoff with buffer
                 Thread.sleep(waitTime);
 
                 // Ensure no pending challenges before creating new one
@@ -974,8 +1014,8 @@ class PushMfaIntegrationIT {
             }
 
             // Now we have 3 unapproved challenges, wait time should be 4s (1s * 2^2)
-            // Wait for that backoff period
-            Thread.sleep(5000);
+            // Wait for that backoff period plus small buffer
+            Thread.sleep(4500);
 
             // Ensure no pending challenges before creating approval challenge
             awaitNoPendingChallenges(deviceClient);

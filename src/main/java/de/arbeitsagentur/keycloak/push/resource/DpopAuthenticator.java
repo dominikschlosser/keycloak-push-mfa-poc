@@ -25,6 +25,7 @@ import de.arbeitsagentur.keycloak.push.util.PushMfaConfig;
 import de.arbeitsagentur.keycloak.push.util.PushMfaInputValidator;
 import de.arbeitsagentur.keycloak.push.util.PushMfaKeyUtil;
 import de.arbeitsagentur.keycloak.push.util.PushSignatureVerifier;
+import de.arbeitsagentur.keycloak.push.util.StorageKeyUtil;
 import de.arbeitsagentur.keycloak.push.util.TokenLogHelper;
 import jakarta.ws.rs.BadRequestException;
 import jakarta.ws.rs.ForbiddenException;
@@ -55,7 +56,7 @@ import org.keycloak.util.TokenUtil;
 import org.keycloak.utils.StringUtil;
 
 /** Helper for DPoP-based device authentication. */
-public final class DpopAuthenticator {
+public class DpopAuthenticator {
 
     private final KeycloakSession session;
     private final PushMfaConfig.Dpop dpopLimits;
@@ -120,7 +121,7 @@ public final class DpopAuthenticator {
                 throw new BadRequestException("DPoP proof missing iat");
             }
             long now = Instant.now().getEpochSecond();
-            if (Math.abs(now - iat) > 120) {
+            if (Math.abs(now - iat) > dpopLimits.iatToleranceSeconds()) {
                 throw new BadRequestException("DPoP proof expired");
             }
 
@@ -225,6 +226,9 @@ public final class DpopAuthenticator {
         if (authorization.startsWith("DPoP ")) {
             token = authorization.replaceFirst("DPoP ", "").trim();
         } else if (authorization.startsWith("Bearer ")) {
+            // Bearer token is intentionally accepted alongside DPoP for backwards
+            // compatibility with existing client implementations that may send
+            // DPoP-bound tokens using the Bearer scheme instead of the DPoP scheme.
             token = authorization.replaceFirst("Bearer ", "").trim();
         } else {
             throw new NotAuthorizedException("DPoP access token required");
@@ -236,7 +240,7 @@ public final class DpopAuthenticator {
         return token;
     }
 
-    private AccessToken authenticateAccessToken(String tokenString) {
+    protected AccessToken authenticateAccessToken(String tokenString) {
         try {
             TokenVerifier.Predicate<? super AccessToken> revocationCheck =
                     new TokenManager.TokenRevocationCheck(session);
@@ -271,12 +275,14 @@ public final class DpopAuthenticator {
         return proof;
     }
 
+    private static final String DPOP_JTI_PREFIX = "push-mfa:dpop:jti:";
+
     private boolean markDpopJtiUsed(String realmId, String jkt, String jti) {
         SingleUseObjectProvider singleUse = session.singleUseObjects();
         if (singleUse == null) {
             throw new IllegalStateException("SingleUseObjectProvider unavailable");
         }
-        String key = String.format("push-mfa:dpop:jti:%s:%s:%s", realmId, jkt, jti);
+        String key = StorageKeyUtil.buildKey(DPOP_JTI_PREFIX, realmId, jkt, jti);
         return singleUse.putIfAbsent(key, dpopLimits.jtiTtlSeconds());
     }
 

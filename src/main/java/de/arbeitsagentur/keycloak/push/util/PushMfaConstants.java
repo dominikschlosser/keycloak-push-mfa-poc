@@ -56,6 +56,7 @@ public final class PushMfaConstants {
     public static final Duration DEFAULT_ENROLLMENT_CHALLENGE_TTL = Duration.ofSeconds(240);
     public static final int DEFAULT_MAX_PENDING_AUTH_CHALLENGES = 1;
     public static final int DEFAULT_USER_VERIFICATION_PIN_LENGTH = 4;
+    public static final int MAX_USER_VERIFICATION_PIN_LENGTH = 12;
 
     public static final String REQUIRED_ACTION_ID = "push-mfa-register";
 

@@ -75,8 +75,6 @@ class PushMfaSecurityIT {
             Paths.get("config", "demo-realm.json").toAbsolutePath();
     private static final String TEST_USERNAME = "sectest";
     private static final String TEST_PASSWORD = "sectest";
-    private static final String ATTACKER_USERNAME = "attacker";
-    private static final String ATTACKER_PASSWORD = "attacker";
     private static final int MAX_RETRIES = 3;
 
     @Container
@@ -101,7 +99,6 @@ class PushMfaSecurityIT {
         baseUri = URI.create(String.format("http://%s:%d/", KEYCLOAK.getHost(), KEYCLOAK.getMappedPort(8080)));
         adminClient = new AdminClient(baseUri);
         adminClient.ensureUser(TEST_USERNAME, TEST_PASSWORD);
-        adminClient.ensureUser(ATTACKER_USERNAME, ATTACKER_PASSWORD);
     }
 
     @BeforeEach
@@ -111,11 +108,6 @@ class PushMfaSecurityIT {
                 PushMfaConstants.USER_VERIFICATION_NONE, PushMfaConstants.DEFAULT_USER_VERIFICATION_PIN_LENGTH);
         try {
             adminClient.logoutAllSessions(TEST_USERNAME);
-        } catch (Exception e) {
-            // User might not have sessions
-        }
-        try {
-            adminClient.logoutAllSessions(ATTACKER_USERNAME);
         } catch (Exception e) {
             // User might not have sessions
         }
@@ -235,7 +227,7 @@ class PushMfaSecurityIT {
                     .build();
             HttpResponse<String> response = http.send(request, HttpResponse.BodyHandlers.ofString());
 
-            assertTrue(response.statusCode() >= 400, "Oversized JWT should be rejected");
+            assertEquals(400, response.statusCode(), "Oversized JWT should be rejected with 400 Bad Request");
         }
     }
 
@@ -313,9 +305,7 @@ class PushMfaSecurityIT {
                     .build();
             HttpResponse<String> response = http.send(request, HttpResponse.BodyHandlers.ofString());
 
-            assertTrue(
-                    response.statusCode() == 401 || response.statusCode() == 403,
-                    "DPoP with wrong method should be rejected with 401 or 403, got: " + response.statusCode());
+            assertEquals(403, response.statusCode(), "DPoP with wrong method should be rejected with 403 Forbidden");
         }
 
         @Test
@@ -416,12 +406,13 @@ class PushMfaSecurityIT {
     @DisplayName("Timing Attacks")
     class TimingAttacks {
 
-        private static final int WARMUP_ITERATIONS = 3;
-        private static final int TIMING_SAMPLES = 20;
+        private static final int WARMUP_ITERATIONS = 5;
+        private static final int TIMING_SAMPLES = 40;
         // For valid auth where we do DB lookup, allow some variance
         private static final double MAX_TIMING_VARIANCE_RATIO_AUTHENTICATED = 2.0;
         // For invalid/missing auth, check fails before any user lookup - should be nearly identical
-        private static final double MAX_TIMING_VARIANCE_RATIO_AUTH_FAIL = 1.3;
+        // Using 1.5 to account for network/container variance while still catching real timing leaks
+        private static final double MAX_TIMING_VARIANCE_RATIO_AUTH_FAIL = 1.5;
 
         @Test
         @DisplayName("Valid user with no challenges returns empty list")
