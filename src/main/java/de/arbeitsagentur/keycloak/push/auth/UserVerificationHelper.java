@@ -33,16 +33,24 @@ public final class UserVerificationHelper {
     private UserVerificationHelper() {}
 
     public static List<String> generateNumberMatchOptions() {
+        return generateNumberMatchOptions(RANDOM);
+    }
+
+    public static List<String> generateNumberMatchOptions(Random random) {
         List<String> values = new ArrayList<>(NUMBER_MATCH_VALUES);
-        Collections.shuffle(values, RANDOM);
+        Collections.shuffle(values, random);
         return List.copyOf(values.subList(0, 3));
     }
 
     public static String selectNumberMatchValue(List<String> options) {
+        return selectNumberMatchValue(options, RANDOM);
+    }
+
+    public static String selectNumberMatchValue(List<String> options, Random random) {
         if (options == null || options.isEmpty()) {
             return null;
         }
-        return options.get(RANDOM.nextInt(options.size()));
+        return options.get(random.nextInt(options.size()));
     }
 
     public static String generatePin(int length) {

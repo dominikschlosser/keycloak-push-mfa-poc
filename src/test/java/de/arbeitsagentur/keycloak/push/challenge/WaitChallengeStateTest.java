@@ -156,4 +156,63 @@ class WaitChallengeStateTest {
         assertEquals(
                 Duration.ZERO, WaitChallengeState.calculateNextWait(-1, Duration.ofSeconds(10), Duration.ofHours(1)));
     }
+
+    @Test
+    void isWaiting_returnsFalse_whenWaitUntilExactlyEqualsNow() {
+        Instant now = Instant.now();
+        WaitChallengeState state = new WaitChallengeState(now, now, 1, now);
+
+        // When now == waitUntil, now.isBefore(waitUntil) returns false
+        assertFalse(state.isWaiting(now));
+    }
+
+    @Test
+    void isExpired_withNegativeResetPeriod() {
+        Instant now = Instant.now();
+        Instant firstUnapproved = now.minusSeconds(1);
+        WaitChallengeState state = new WaitChallengeState(firstUnapproved, now, 1, now.plusSeconds(60));
+
+        // Duration.between(firstUnapproved, now) = 1 second
+        // A negative reset period means state should always be considered expired
+        assertTrue(state.isExpired(now, Duration.ofSeconds(-1)));
+    }
+
+    @Test
+    void calculateNextWait_withNegativeBaseWait() {
+        // Negative base wait results in negative durations
+        Duration result = WaitChallengeState.calculateNextWait(1, Duration.ofSeconds(-10), Duration.ofHours(1));
+
+        // -10 seconds is less than max wait (1 hour), so it won't be capped
+        assertEquals(Duration.ofSeconds(-10), result);
+    }
+
+    @Test
+    void allNullFields_handledGracefully() {
+        WaitChallengeState state = new WaitChallengeState(null, null, 0, null);
+        Instant now = Instant.now();
+
+        // isWaiting should return false when waitUntil is null
+        assertFalse(state.isWaiting(now));
+
+        // remainingWait should return ZERO when not waiting
+        assertEquals(Duration.ZERO, state.remainingWait(now));
+
+        // isExpired should return true when firstUnapprovedAt is null
+        assertTrue(state.isExpired(now, Duration.ofHours(24)));
+
+        // Verify record accessors don't throw NPE
+        assertNull(state.firstUnapprovedAt());
+        assertNull(state.lastChallengeAt());
+        assertEquals(0, state.consecutiveUnapproved());
+        assertNull(state.waitUntil());
+    }
+
+    @Test
+    void remainingWait_atExactBoundary() {
+        Instant now = Instant.now();
+        WaitChallengeState state = new WaitChallengeState(now, now, 1, now);
+
+        // When now == waitUntil, isWaiting returns false, so remainingWait returns ZERO
+        assertEquals(Duration.ZERO, state.remainingWait(now));
+    }
 }

@@ -86,7 +86,7 @@ public final class AuthenticatorConfigHelper {
             if (configured <= 0) {
                 return defaultValue;
             }
-            return Math.min(configured, 12);
+            return Math.min(configured, PushMfaConstants.MAX_USER_VERIFICATION_PIN_LENGTH);
         } catch (NumberFormatException ex) {
             return defaultValue;
         }

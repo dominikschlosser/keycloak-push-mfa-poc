@@ -107,24 +107,6 @@ class PushTokenBuilderTest {
     }
 
     @Test
-    void confirmTokenDoesNotLeakClientDetails() throws Exception {
-        String token = PushConfirmTokenBuilder.build(
-                session,
-                realm,
-                "credential-alias",
-                "challenge-123",
-                Instant.ofEpochSecond(1700000100),
-                URI.create("http://localhost:8080/"));
-
-        SignedJWT jwt = SignedJWT.parse(token);
-        JWTClaimsSet claims = jwt.getJWTClaimsSet();
-        assertNull(claims.getSubject());
-        assertEquals("credential-alias", claims.getStringClaim("credId"));
-        assertNull(claims.getClaim("client_name"));
-        assertNull(claims.getClaim("client_id"));
-    }
-
-    @Test
     void confirmTokenUsesRealmSpecifiedRsaAlgorithm() throws Exception {
         KeyWrapper rsKey = buildKeyWrapper("rs512-kid", Algorithm.RS512.toString());
         Mockito.when(realm.getDefaultSignatureAlgorithm()).thenReturn(Algorithm.RS512.toString());

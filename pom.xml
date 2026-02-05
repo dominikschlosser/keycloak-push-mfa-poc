@@ -267,6 +267,9 @@
           <systemPropertyVariables>
             <api.version>${docker.api.version}</api.version>
           </systemPropertyVariables>
+          <!-- Fork multiple JVMs to run test classes in parallel -->
+          <forkCount>4</forkCount>
+          <reuseForks>true</reuseForks>
         </configuration>
         <executions>
           <execution>

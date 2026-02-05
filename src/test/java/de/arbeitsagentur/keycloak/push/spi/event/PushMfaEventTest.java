@@ -231,7 +231,7 @@ class PushMfaEventTest {
         for (PushMfaEvent event : events) {
             assertNotNull(event.eventType(), "eventType should not be null");
             assertNotNull(event.realmId(), "realmId should not be null");
-            assertNotNull(event.userId(), "userId should not be null");
+            // userId can be null for some events (e.g., DpopAuthenticationFailedEvent)
             assertNotNull(event.timestamp(), "timestamp should not be null");
         }
     }

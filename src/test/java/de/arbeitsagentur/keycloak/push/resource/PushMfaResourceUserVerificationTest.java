@@ -48,6 +48,17 @@ class PushMfaResourceUserVerificationTest {
     }
 
     @Test
+    void verifyUserVerificationAcceptsCorrectPin() {
+        KeycloakSession session = buildMockSession();
+        PushMfaResource resource = new PushMfaResource(session);
+        PushChallenge challenge = buildPinChallenge("0123");
+        ObjectNode payload = MAPPER.createObjectNode().put("userVerification", "0123");
+
+        // Should not throw any exception
+        resource.verifyUserVerification(session, challenge, payload);
+    }
+
+    @Test
     void buildUserVerificationInfoForPinOmitsValue() {
         KeycloakSession session = buildMockSession();
         PushMfaResource resource = new PushMfaResource(session);
@@ -64,6 +75,51 @@ class PushMfaResourceUserVerificationTest {
         SingleUseObjectProvider singleUse = Mockito.mock(SingleUseObjectProvider.class);
         Mockito.when(session.singleUseObjects()).thenReturn(singleUse);
         return session;
+    }
+
+    @Test
+    void verifyUserVerification_numberMatch_acceptsCorrectSelection() {
+        KeycloakSession session = buildMockSession();
+        PushMfaResource resource = new PushMfaResource(session);
+        PushChallenge challenge = buildNumberMatchChallenge("42", List.of("17", "42", "89"));
+        ObjectNode payload = MAPPER.createObjectNode().put("userVerification", "42");
+
+        // Should not throw any exception
+        resource.verifyUserVerification(session, challenge, payload);
+    }
+
+    @Test
+    void verifyUserVerification_numberMatch_rejectsWrongSelection() {
+        KeycloakSession session = buildMockSession();
+        PushMfaResource resource = new PushMfaResource(session);
+        PushChallenge challenge = buildNumberMatchChallenge("42", List.of("17", "42", "89"));
+        ObjectNode payload = MAPPER.createObjectNode().put("userVerification", "17");
+
+        assertThrows(ForbiddenException.class, () -> resource.verifyUserVerification(session, challenge, payload));
+    }
+
+    @Test
+    void buildUserVerificationInfo_numberMatch_returnsNumbersList() {
+        KeycloakSession session = buildMockSession();
+        PushMfaResource resource = new PushMfaResource(session);
+        List<String> numbers = List.of("12", "56", "78");
+        PushChallenge challenge = buildNumberMatchChallenge("56", numbers);
+
+        PushMfaResource.UserVerificationInfo info = resource.buildUserVerificationInfo(challenge);
+        assertEquals(PushMfaConstants.USER_VERIFICATION_NUMBER_MATCH, info.type());
+        assertEquals(numbers, info.numbers());
+        assertNull(info.pinLength());
+    }
+
+    @Test
+    void verifyUserVerification_noneMode_skipsValidation() {
+        KeycloakSession session = buildMockSession();
+        PushMfaResource resource = new PushMfaResource(session);
+        PushChallenge challenge = buildNoneChallenge();
+        ObjectNode payload = MAPPER.createObjectNode();
+
+        // Should not throw any exception even without userVerification in payload
+        resource.verifyUserVerification(session, challenge, payload);
     }
 
     private PushChallenge buildPinChallenge(String pin) {
@@ -83,6 +139,46 @@ class PushMfaResourceUserVerificationTest {
                 null,
                 PushChallenge.UserVerificationMode.PIN,
                 pin,
+                List.of());
+    }
+
+    private PushChallenge buildNumberMatchChallenge(String correctNumber, List<String> options) {
+        return new PushChallenge(
+                "challenge-123",
+                "realm-id",
+                "user-id",
+                new byte[] {1, 2, 3},
+                "cred-1",
+                "client-id",
+                "watch-secret",
+                "root-session",
+                Instant.now().plusSeconds(300),
+                PushChallenge.Type.AUTHENTICATION,
+                PushChallengeStatus.PENDING,
+                Instant.now(),
+                null,
+                PushChallenge.UserVerificationMode.NUMBER_MATCH,
+                correctNumber,
+                options);
+    }
+
+    private PushChallenge buildNoneChallenge() {
+        return new PushChallenge(
+                "challenge-123",
+                "realm-id",
+                "user-id",
+                new byte[] {1, 2, 3},
+                "cred-1",
+                "client-id",
+                "watch-secret",
+                "root-session",
+                Instant.now().plusSeconds(300),
+                PushChallenge.Type.AUTHENTICATION,
+                PushChallengeStatus.PENDING,
+                Instant.now(),
+                null,
+                PushChallenge.UserVerificationMode.NONE,
+                null,
                 List.of());
     }
 }

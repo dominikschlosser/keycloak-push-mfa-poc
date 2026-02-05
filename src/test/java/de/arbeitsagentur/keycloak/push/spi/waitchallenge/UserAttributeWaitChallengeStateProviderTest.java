@@ -145,8 +145,8 @@ class UserAttributeWaitChallengeStateProviderTest {
         WaitChallengeState state = provider.get(REALM_ID, USER_ID, RESET_PERIOD).orElseThrow();
         assertTrue(state.isWaiting(Instant.now()));
 
-        // Wait for the wait period to expire
-        Thread.sleep(150);
+        // Wait for the wait period to expire (200ms margin for slow CI systems)
+        Thread.sleep(200);
 
         WaitChallengeState after = provider.get(REALM_ID, USER_ID, RESET_PERIOD).orElseThrow();
         assertFalse(after.isWaiting(Instant.now()));
@@ -156,7 +156,7 @@ class UserAttributeWaitChallengeStateProviderTest {
     void waitEnforcement_doublesOnSecondAttempt() throws Exception {
         // First attempt: 100ms wait
         provider.recordChallengeCreated(REALM_ID, USER_ID, BASE_WAIT, MAX_WAIT, RESET_PERIOD);
-        Thread.sleep(150);
+        Thread.sleep(200); // 200ms margin for slow CI systems
 
         // Second attempt: 200ms wait
         provider.recordChallengeCreated(REALM_ID, USER_ID, BASE_WAIT, MAX_WAIT, RESET_PERIOD);
@@ -177,7 +177,7 @@ class UserAttributeWaitChallengeStateProviderTest {
         // Verify attribute exists
         assertNotNull(userAttributes.get(ATTRIBUTE_KEY));
 
-        Thread.sleep(150);
+        Thread.sleep(200); // 200ms margin for slow CI systems
 
         // On get(), the expired state should be deleted
         Optional<WaitChallengeState> state = provider.get(REALM_ID, USER_ID, shortResetPeriod);

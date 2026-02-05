@@ -239,6 +239,95 @@ public final class AdminClient {
         deletePushCredentials(userId);
     }
 
+    /**
+     * Delete a user from the realm. Silently succeeds if user doesn't exist.
+     *
+     * @param username the username to delete
+     */
+    public void deleteUser(String username) throws Exception {
+        ensureAccessToken();
+        String userId = findUserId(username);
+        if (userId == null || userId.isBlank()) {
+            return; // User doesn't exist, nothing to delete
+        }
+
+        URI deleteUri = baseUri.resolve("/admin/realms/demo/users/" + userId);
+        HttpRequest request = HttpRequest.newBuilder(deleteUri)
+                .header("Authorization", "Bearer " + accessToken)
+                .DELETE()
+                .build();
+        HttpResponse<String> response = http.send(request, HttpResponse.BodyHandlers.ofString());
+        if (response.statusCode() != 204 && response.statusCode() != 404) {
+            throw new IllegalStateException("Failed to delete user: " + response.statusCode() + " " + response.body());
+        }
+    }
+
+    /**
+     * Set a user attribute value. Used for testing attribute-based state manipulation.
+     *
+     * @param username the username
+     * @param attributeName the attribute name to set
+     * @param attributeValue the attribute value to set
+     */
+    public void setUserAttribute(String username, String attributeName, String attributeValue) throws Exception {
+        ensureAccessToken();
+        String userId = findUserId(username);
+        if (userId == null || userId.isBlank()) {
+            throw new IllegalStateException("User not found: " + username);
+        }
+
+        // Get current user representation
+        URI userUri = baseUri.resolve("/admin/realms/demo/users/" + userId);
+        HttpResponse<String> getResponse = http.send(
+                HttpRequest.newBuilder(userUri)
+                        .header("Authorization", "Bearer " + accessToken)
+                        .header("Accept", "application/json")
+                        .GET()
+                        .build(),
+                HttpResponse.BodyHandlers.ofString());
+
+        if (getResponse.statusCode() != 200) {
+            throw new IllegalStateException(
+                    "Failed to get user: " + getResponse.statusCode() + " " + getResponse.body());
+        }
+
+        JsonNode userNode = MAPPER.readTree(getResponse.body());
+        ObjectNode userObject = (ObjectNode) userNode;
+
+        // Ensure attributes object exists
+        JsonNode attributes = userObject.get("attributes");
+        ObjectNode attrsObject;
+        if (attributes == null || !attributes.isObject()) {
+            attrsObject = MAPPER.createObjectNode();
+            userObject.set("attributes", attrsObject);
+        } else {
+            attrsObject = (ObjectNode) attributes;
+        }
+
+        // Set the attribute as an array with single value (Keycloak convention)
+        attrsObject.set(attributeName, MAPPER.createArrayNode().add(attributeValue));
+
+        // Update the user
+        HttpResponse<String> putResponse = http.send(
+                HttpRequest.newBuilder(userUri)
+                        .header("Authorization", "Bearer " + accessToken)
+                        .header("Content-Type", "application/json")
+                        .PUT(HttpRequest.BodyPublishers.ofString(userObject.toString()))
+                        .build(),
+                HttpResponse.BodyHandlers.ofString());
+
+        if (putResponse.statusCode() != 204) {
+            throw new IllegalStateException(
+                    "Failed to set user attribute: " + putResponse.statusCode() + " " + putResponse.body());
+        }
+
+        // Clear caches to ensure Keycloak picks up the change
+        clearRealmCaches();
+
+        // Small delay for changes to propagate
+        Thread.sleep(100);
+    }
+
     private String createUser(String username) throws Exception {
         URI createUri = baseUri.resolve("/admin/realms/demo/users");
         String payload = MAPPER.createObjectNode()
@@ -414,8 +503,22 @@ public final class AdminClient {
                 .GET()
                 .build();
         HttpResponse<String> response = http.send(request, HttpResponse.BodyHandlers.ofString());
-        assertEquals(200, response.statusCode(), () -> "User lookup failed: " + response.body());
-        JsonNode users = MAPPER.readTree(response.body());
+
+        // Retry on 401 (token expired)
+        if (response.statusCode() == 401) {
+            resetAccessToken();
+            ensureAccessToken();
+            HttpRequest retryRequest = HttpRequest.newBuilder(usersUri)
+                    .header("Authorization", "Bearer " + accessToken)
+                    .header("Accept", "application/json")
+                    .GET()
+                    .build();
+            response = http.send(retryRequest, HttpResponse.BodyHandlers.ofString());
+        }
+
+        final HttpResponse<String> finalResponse = response;
+        assertEquals(200, finalResponse.statusCode(), () -> "User lookup failed: " + finalResponse.body());
+        JsonNode users = MAPPER.readTree(finalResponse.body());
         if (users.isArray() && !users.isEmpty()) {
             return users.get(0).path("id").asText(null);
         }

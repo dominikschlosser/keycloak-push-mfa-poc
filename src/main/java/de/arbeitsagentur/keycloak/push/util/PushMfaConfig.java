@@ -20,7 +20,7 @@ import org.keycloak.Config;
 
 public record PushMfaConfig(Dpop dpop, Input input, Sse sse) {
 
-    public record Dpop(int jtiTtlSeconds, int jtiMaxLength) {}
+    public record Dpop(int jtiTtlSeconds, int jtiMaxLength, int iatToleranceSeconds) {}
 
     public record Input(
             int maxJwtLength,
@@ -48,7 +48,8 @@ public record PushMfaConfig(Dpop dpop, Input input, Sse sse) {
         return new PushMfaConfig(
                 new Dpop(
                         boundedInt(dpop, keycloakDpop, "dpop", "jtiTtlSeconds", 300, 30, 3600),
-                        boundedInt(dpop, keycloakDpop, "dpop", "jtiMaxLength", 128, 16, 512)),
+                        boundedInt(dpop, keycloakDpop, "dpop", "jtiMaxLength", 128, 16, 512),
+                        boundedInt(dpop, keycloakDpop, "dpop", "iatToleranceSeconds", 120, 30, 600)),
                 new Input(
                         boundedInt(input, keycloakInput, "input", "maxJwtLength", 16384, 2048, 131072),
                         boundedInt(input, keycloakInput, "input", "maxUserIdLength", 128, 32, 512),

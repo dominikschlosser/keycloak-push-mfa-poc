@@ -34,16 +34,57 @@ import org.keycloak.models.AuthenticatorConfigModel;
 import org.keycloak.models.utils.KeycloakModelUtils;
 import org.keycloak.sessions.AuthenticationSessionModel;
 
-/** Helper for issuing new push challenges. */
-public final class ChallengeIssuer {
+/**
+ * Helper for issuing new push challenges.
+ *
+ * <p><strong>Nonce handling:</strong> Authentication challenges intentionally use an empty nonce.
+ * Unlike enrollment challenges (which must verify that the response came from a device that
+ * received the original token), authentication challenges rely on the unguessable challenge ID
+ * ({@code cid}) for security. The mobile app proves possession of the user's private key via
+ * DPoP authentication, and the challenge ID binds the approval to the specific login attempt.
+ * Adding a nonce would provide no additional security benefit for the authentication flow.
+ *
+ * <p>This class can be extended to customize challenge issuance behavior. Create a subclass
+ * and override the instance methods, then use the instance-based {@link #issueChallenge} method
+ * instead of the static {@link #issue} convenience method.
+ */
+public class ChallengeIssuer {
 
     private static final Logger LOG = Logger.getLogger(ChallengeIssuer.class);
+    private static final ChallengeIssuer DEFAULT_INSTANCE = new ChallengeIssuer();
 
+    /**
+     * Result of issuing a challenge, containing the challenge and its confirmation token.
+     */
     public record IssuedChallenge(PushChallenge challenge, String confirmToken) {}
 
-    private ChallengeIssuer() {}
+    /**
+     * Creates a new ChallengeIssuer instance.
+     * Subclasses can override methods to customize behavior.
+     */
+    public ChallengeIssuer() {}
 
+    /**
+     * Static convenience method for issuing a challenge using the default instance.
+     * For customization, create a subclass and use {@link #issueChallenge} instead.
+     */
     public static IssuedChallenge issue(
+            AuthenticationFlowContext context,
+            PushChallengeStore challengeStore,
+            PushCredentialData credentialData,
+            CredentialModel credential,
+            Duration challengeTtl,
+            String clientId,
+            String rootSessionId) {
+        return DEFAULT_INSTANCE.issueChallenge(
+                context, challengeStore, credentialData, credential, challengeTtl, clientId, rootSessionId);
+    }
+
+    /**
+     * Issues a new push challenge. This is the main entry point for subclasses.
+     * Override individual protected methods to customize specific aspects.
+     */
+    public IssuedChallenge issueChallenge(
             AuthenticationFlowContext context,
             PushChallengeStore challengeStore,
             PushCredentialData credentialData,
@@ -53,26 +94,77 @@ public final class ChallengeIssuer {
             String rootSessionId) {
 
         AuthenticatorConfigModel config = context.getAuthenticatorConfig();
-        String watchSecret = KeycloakModelUtils.generateId();
+        String watchSecret = generateWatchSecret();
 
-        PushChallenge.UserVerificationMode userVerificationMode =
-                AuthenticatorConfigHelper.resolveUserVerificationMode(config);
-        String userVerificationValue = null;
-        List<String> userVerificationOptions = List.of();
+        UserVerificationResult uvResult = resolveUserVerification(config);
 
-        switch (userVerificationMode) {
+        PushChallenge pushChallenge = createChallenge(
+                context, challengeStore, credential, challengeTtl, clientId, rootSessionId, watchSecret, uvResult);
+
+        fireChallengeCreatedEvent(context, pushChallenge);
+        storeChallengeInSession(context, pushChallenge, watchSecret);
+
+        String confirmToken = buildConfirmToken(context, credentialData, pushChallenge);
+
+        logChallengeCreation(credentialData);
+        sendPushNotification(context, credentialData, clientId, confirmToken, pushChallenge);
+
+        return new IssuedChallenge(pushChallenge, confirmToken);
+    }
+
+    /**
+     * Result of user verification resolution.
+     */
+    protected record UserVerificationResult(
+            PushChallenge.UserVerificationMode mode, String value, List<String> options) {}
+
+    /**
+     * Generates a watch secret for SSE/polling.
+     * Override to customize secret generation.
+     */
+    protected String generateWatchSecret() {
+        return KeycloakModelUtils.generateId();
+    }
+
+    /**
+     * Resolves user verification mode and generates verification values.
+     * Override to customize user verification behavior.
+     */
+    protected UserVerificationResult resolveUserVerification(AuthenticatorConfigModel config) {
+        PushChallenge.UserVerificationMode mode = AuthenticatorConfigHelper.resolveUserVerificationMode(config);
+        String value = null;
+        List<String> options = List.of();
+
+        switch (mode) {
             case NUMBER_MATCH -> {
-                userVerificationOptions = UserVerificationHelper.generateNumberMatchOptions();
-                userVerificationValue = UserVerificationHelper.selectNumberMatchValue(userVerificationOptions);
+                options = UserVerificationHelper.generateNumberMatchOptions();
+                value = UserVerificationHelper.selectNumberMatchValue(options);
             }
             case PIN -> {
                 int pinLength = AuthenticatorConfigHelper.resolvePinLength(config);
-                userVerificationValue = UserVerificationHelper.generatePin(pinLength);
+                value = UserVerificationHelper.generatePin(pinLength);
             }
             case NONE -> {}
         }
 
-        PushChallenge pushChallenge = challengeStore.create(
+        return new UserVerificationResult(mode, value, options);
+    }
+
+    /**
+     * Creates the challenge in the store.
+     * Override to customize challenge creation.
+     */
+    protected PushChallenge createChallenge(
+            AuthenticationFlowContext context,
+            PushChallengeStore challengeStore,
+            CredentialModel credential,
+            Duration challengeTtl,
+            String clientId,
+            String rootSessionId,
+            String watchSecret,
+            UserVerificationResult uvResult) {
+        // Authentication challenges use an empty nonce - see class Javadoc for rationale
+        return challengeStore.create(
                 context.getRealm().getId(),
                 context.getUser().getId(),
                 new byte[0],
@@ -82,10 +174,16 @@ public final class ChallengeIssuer {
                 clientId,
                 watchSecret,
                 rootSessionId,
-                userVerificationMode,
-                userVerificationValue,
-                userVerificationOptions);
+                uvResult.mode(),
+                uvResult.value(),
+                uvResult.options());
+    }
 
+    /**
+     * Fires the challenge created event.
+     * Override to customize event firing or add additional events.
+     */
+    protected void fireChallengeCreatedEvent(AuthenticationFlowContext context, PushChallenge pushChallenge) {
         PushMfaEventService.fire(
                 context.getSession(),
                 new ChallengeCreatedEvent(
@@ -98,25 +196,56 @@ public final class ChallengeIssuer {
                         pushChallenge.getUserVerificationMode(),
                         pushChallenge.getExpiresAt(),
                         Instant.now()));
+    }
 
+    /**
+     * Stores the challenge information in the authentication session.
+     * Override to customize session storage.
+     */
+    protected void storeChallengeInSession(
+            AuthenticationFlowContext context, PushChallenge pushChallenge, String watchSecret) {
         AuthenticationSessionModel authSession = context.getAuthenticationSession();
         ChallengeNoteHelper.storeChallengeId(authSession, pushChallenge.getId());
         ChallengeNoteHelper.storeWatchSecret(authSession, watchSecret);
+    }
 
-        String confirmToken = PushConfirmTokenBuilder.build(
+    /**
+     * Builds the confirmation token for the challenge.
+     * Override to customize token generation.
+     */
+    protected String buildConfirmToken(
+            AuthenticationFlowContext context, PushCredentialData credentialData, PushChallenge pushChallenge) {
+        return PushConfirmTokenBuilder.build(
                 context.getSession(),
                 context.getRealm(),
                 credentialData.getCredentialId(),
                 pushChallenge.getId(),
                 pushChallenge.getExpiresAt(),
                 context.getUriInfo().getBaseUri());
+    }
 
+    /**
+     * Logs the challenge creation.
+     * Override to customize logging.
+     */
+    protected void logChallengeCreation(PushCredentialData credentialData) {
         LOG.debugf(
                 "Push message prepared {version=%d,type=%d,credentialId=%s}",
                 PushMfaConstants.PUSH_MESSAGE_VERSION,
                 PushMfaConstants.PUSH_MESSAGE_TYPE,
                 credentialData.getCredentialId());
+    }
 
+    /**
+     * Sends the push notification to the device.
+     * Override to customize notification delivery.
+     */
+    protected void sendPushNotification(
+            AuthenticationFlowContext context,
+            PushCredentialData credentialData,
+            String clientId,
+            String confirmToken,
+            PushChallenge pushChallenge) {
         PushNotificationService.notifyDevice(
                 context.getSession(),
                 context.getRealm(),
@@ -127,7 +256,5 @@ public final class ChallengeIssuer {
                 pushChallenge.getId(),
                 credentialData.getPushProviderType(),
                 credentialData.getPushProviderId());
-
-        return new IssuedChallenge(pushChallenge, confirmToken);
     }
 }

@@ -16,7 +16,9 @@
 
 package de.arbeitsagentur.keycloak.push;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.nimbusds.jose.JOSEObjectType;
@@ -35,6 +37,7 @@ import com.nimbusds.jose.jwk.gen.RSAKeyGenerator;
 import com.nimbusds.jwt.JWTClaimsSet;
 import com.nimbusds.jwt.SignedJWT;
 import de.arbeitsagentur.keycloak.push.util.PushSignatureVerifier;
+import jakarta.ws.rs.BadRequestException;
 import java.time.Instant;
 import java.util.Date;
 import java.util.UUID;
@@ -91,6 +94,124 @@ class PushSignatureVerifierTest {
                 .generate();
         SignedJWT forged = signed("ec-test", tamperedKey, JWSAlgorithm.ES256);
         assertFalse(PushSignatureVerifier.verify(new JWSInput(forged.serialize()), wrapper));
+    }
+
+    @Test
+    void es384SignatureRoundTrip() throws Exception {
+        ECKey ecKey = new ECKeyGenerator(Curve.P_384)
+                .keyID("ec384-" + UUID.randomUUID())
+                .algorithm(JWSAlgorithm.ES384)
+                .keyUse(KeyUse.SIGNATURE)
+                .generate();
+        SignedJWT jwt = signed("es384-test", ecKey, JWSAlgorithm.ES384);
+        KeyWrapper wrapper = keyWrapper(ecKey.toPublicJWK());
+        assertTrue(PushSignatureVerifier.verify(new JWSInput(jwt.serialize()), wrapper));
+
+        ECKey tamperedKey = new ECKeyGenerator(Curve.P_384)
+                .keyID("ec384-tampered-" + UUID.randomUUID())
+                .algorithm(JWSAlgorithm.ES384)
+                .keyUse(KeyUse.SIGNATURE)
+                .generate();
+        SignedJWT forged = signed("es384-test", tamperedKey, JWSAlgorithm.ES384);
+        assertFalse(PushSignatureVerifier.verify(new JWSInput(forged.serialize()), wrapper));
+    }
+
+    @Test
+    void es512SignatureRoundTrip() throws Exception {
+        ECKey ecKey = new ECKeyGenerator(Curve.P_521)
+                .keyID("ec512-" + UUID.randomUUID())
+                .algorithm(JWSAlgorithm.ES512)
+                .keyUse(KeyUse.SIGNATURE)
+                .generate();
+        SignedJWT jwt = signed("es512-test", ecKey, JWSAlgorithm.ES512);
+        KeyWrapper wrapper = keyWrapper(ecKey.toPublicJWK());
+        assertTrue(PushSignatureVerifier.verify(new JWSInput(jwt.serialize()), wrapper));
+
+        ECKey tamperedKey = new ECKeyGenerator(Curve.P_521)
+                .keyID("ec512-tampered-" + UUID.randomUUID())
+                .algorithm(JWSAlgorithm.ES512)
+                .keyUse(KeyUse.SIGNATURE)
+                .generate();
+        SignedJWT forged = signed("es512-test", tamperedKey, JWSAlgorithm.ES512);
+        assertFalse(PushSignatureVerifier.verify(new JWSInput(forged.serialize()), wrapper));
+    }
+
+    @Test
+    void rs384SignatureRoundTrip() throws Exception {
+        RSAKey rsaKey = new RSAKeyGenerator(2048)
+                .keyID("rsa384-" + UUID.randomUUID())
+                .algorithm(JWSAlgorithm.RS384)
+                .keyUse(KeyUse.SIGNATURE)
+                .generate();
+        SignedJWT jwt = signed("rs384-test", rsaKey, JWSAlgorithm.RS384);
+        JWSInput input = new JWSInput(jwt.serialize());
+        KeyWrapper wrapper = keyWrapper(rsaKey.toPublicJWK());
+        assertTrue(PushSignatureVerifier.verify(input, wrapper));
+
+        RSAKey otherKey = new RSAKeyGenerator(2048)
+                .keyID("rsa384-other-" + UUID.randomUUID())
+                .algorithm(JWSAlgorithm.RS384)
+                .keyUse(KeyUse.SIGNATURE)
+                .generate();
+        SignedJWT forged = signed("rs384-test", otherKey, JWSAlgorithm.RS384);
+        assertFalse(PushSignatureVerifier.verify(new JWSInput(forged.serialize()), wrapper));
+    }
+
+    @Test
+    void rs512SignatureRoundTrip() throws Exception {
+        RSAKey rsaKey = new RSAKeyGenerator(2048)
+                .keyID("rsa512-" + UUID.randomUUID())
+                .algorithm(JWSAlgorithm.RS512)
+                .keyUse(KeyUse.SIGNATURE)
+                .generate();
+        SignedJWT jwt = signed("rs512-test", rsaKey, JWSAlgorithm.RS512);
+        JWSInput input = new JWSInput(jwt.serialize());
+        KeyWrapper wrapper = keyWrapper(rsaKey.toPublicJWK());
+        assertTrue(PushSignatureVerifier.verify(input, wrapper));
+
+        RSAKey otherKey = new RSAKeyGenerator(2048)
+                .keyID("rsa512-other-" + UUID.randomUUID())
+                .algorithm(JWSAlgorithm.RS512)
+                .keyUse(KeyUse.SIGNATURE)
+                .generate();
+        SignedJWT forged = signed("rs512-test", otherKey, JWSAlgorithm.RS512);
+        assertFalse(PushSignatureVerifier.verify(new JWSInput(forged.serialize()), wrapper));
+    }
+
+    @Test
+    void verifyWithNullKeyWrapperThrowsBadRequest() throws Exception {
+        RSAKey rsaKey = new RSAKeyGenerator(2048)
+                .keyID("rsa-" + UUID.randomUUID())
+                .algorithm(JWSAlgorithm.RS256)
+                .keyUse(KeyUse.SIGNATURE)
+                .generate();
+        SignedJWT jwt = signed("null-wrapper-test", rsaKey, JWSAlgorithm.RS256);
+        JWSInput input = new JWSInput(jwt.serialize());
+
+        BadRequestException ex =
+                assertThrows(BadRequestException.class, () -> PushSignatureVerifier.verify(input, null));
+        assertEquals("JWK missing key type", ex.getMessage());
+    }
+
+    @Test
+    void verifyWithKeyWrapperMissingTypeThrowsBadRequest() throws Exception {
+        RSAKey rsaKey = new RSAKeyGenerator(2048)
+                .keyID("rsa-" + UUID.randomUUID())
+                .algorithm(JWSAlgorithm.RS256)
+                .keyUse(KeyUse.SIGNATURE)
+                .generate();
+        SignedJWT jwt = signed("missing-type-test", rsaKey, JWSAlgorithm.RS256);
+        JWSInput input = new JWSInput(jwt.serialize());
+
+        KeyWrapper wrapper = new KeyWrapper();
+        wrapper.setKid(rsaKey.getKeyID());
+        wrapper.setPublicKey(rsaKey.toRSAPublicKey());
+        wrapper.setAlgorithm(JWSAlgorithm.RS256.getName());
+        // Intentionally not setting type
+
+        BadRequestException ex =
+                assertThrows(BadRequestException.class, () -> PushSignatureVerifier.verify(input, wrapper));
+        assertEquals("JWK missing key type", ex.getMessage());
     }
 
     private SignedJWT signed(String subject, JWK jwk, JWSAlgorithm alg) throws Exception {

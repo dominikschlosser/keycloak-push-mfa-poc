@@ -44,6 +44,75 @@ import org.keycloak.utils.StringUtil;
 
 public class PushMfaAuthenticator implements Authenticator {
 
+    /**
+     * Credential and its parsed data. Protected to allow subclasses to use and extend.
+     */
+    protected record CredentialAndData(CredentialModel credential, PushCredentialData data) {}
+
+    /**
+     * Creates a new PushChallengeStore. Override to provide a custom store implementation.
+     *
+     * @param session the Keycloak session
+     * @return the challenge store
+     */
+    protected PushChallengeStore createChallengeStore(KeycloakSession session) {
+        return new PushChallengeStore(session);
+    }
+
+    /**
+     * Called after a new challenge has been created. Override to add custom behavior.
+     *
+     * @param context the authentication flow context
+     * @param challenge the created challenge
+     */
+    protected void onChallengeCreated(AuthenticationFlowContext context, PushChallenge challenge) {}
+
+    /**
+     * Called after a challenge has been approved. Override to add custom behavior.
+     *
+     * @param context the authentication flow context
+     * @param challenge the approved challenge
+     */
+    protected void onChallengeApproved(AuthenticationFlowContext context, PushChallenge challenge) {}
+
+    /**
+     * Called after a challenge has been denied. Override to add custom behavior.
+     *
+     * @param context the authentication flow context
+     * @param challenge the denied challenge
+     */
+    protected void onChallengeDenied(AuthenticationFlowContext context, PushChallenge challenge) {}
+
+    /**
+     * Called after a challenge has expired. Override to add custom behavior.
+     *
+     * @param context the authentication flow context
+     * @param challenge the expired challenge
+     */
+    protected void onChallengeExpired(AuthenticationFlowContext context, PushChallenge challenge) {}
+
+    /**
+     * Authenticates the user via push MFA. This method handles multiple entry points
+     * depending on the authentication flow state:
+     *
+     * <ol>
+     *   <li><b>SSE/Polling callback:</b> When the request contains a challengeId (from SSE or
+     *       polling response), delegate to {@link #action} to check the challenge status.
+     *       The challengeId is stored in the auth session for subsequent requests.</li>
+     *
+     *   <li><b>Refresh/Cancel with existing challenge:</b> When the user requests a refresh
+     *       or cancel and already has an active challenge, delegate to {@link #action}
+     *       to handle the refresh or cancellation.</li>
+     *
+     *   <li><b>No credential configured:</b> If the user has no push MFA credential,
+     *       skip this authenticator and proceed with success.</li>
+     *
+     *   <li><b>Primary login (default):</b> After username/password authentication,
+     *       issue a new push challenge and display the waiting form.</li>
+     * </ol>
+     *
+     * @param context the authentication flow context
+     */
     @Override
     public void authenticate(AuthenticationFlowContext context) {
         MultivaluedMap<String, String> form = context.getHttpRequest().getDecodedFormParameters();
@@ -53,35 +122,83 @@ public class PushMfaAuthenticator implements Authenticator {
         boolean isRefresh = form.containsKey("refresh") || form.containsKey("cancel");
         boolean looksLikePrimaryLogin = form.containsKey("username") || form.containsKey("password");
 
-        if (!looksLikePrimaryLogin && !StringUtil.isBlank(requestChallengeId)) {
+        // Scenario 1: SSE/polling callback with challenge ID
+        if (isChallengeCallback(looksLikePrimaryLogin, requestChallengeId)) {
             if (StringUtil.isBlank(storedChallengeId)) {
                 ChallengeNoteHelper.storeChallengeId(authSession, requestChallengeId);
             }
             action(context);
             return;
         }
-        if (!looksLikePrimaryLogin && isRefresh && storedChallengeId != null) {
+
+        // Scenario 2: Refresh/cancel request with existing challenge
+        if (isRefreshWithExistingChallenge(looksLikePrimaryLogin, isRefresh, storedChallengeId)) {
             action(context);
             return;
         }
 
+        // Scenario 3: No push credential configured - skip MFA
         CredentialAndData cred = resolveCredential(context.getUser());
         if (cred == null) {
             context.success();
             return;
         }
-        if (checkPendingChallengeLimit(context, null)) {
+
+        // Scenario 4: Primary login - issue new challenge
+        issueWithLock(context, cred);
+    }
+
+    /**
+     * Determines if this request is a challenge callback from SSE/polling.
+     */
+    protected boolean isChallengeCallback(boolean looksLikePrimaryLogin, String requestChallengeId) {
+        return !looksLikePrimaryLogin && !StringUtil.isBlank(requestChallengeId);
+    }
+
+    /**
+     * Determines if this is a refresh request with an existing challenge.
+     */
+    protected boolean isRefreshWithExistingChallenge(
+            boolean looksLikePrimaryLogin, boolean isRefresh, String storedChallengeId) {
+        return !looksLikePrimaryLogin && isRefresh && storedChallengeId != null;
+    }
+
+    /**
+     * Issues a new challenge with a per-user lock to prevent race conditions.
+     * Override to customize the locking or challenge issuance strategy.
+     */
+    protected void issueWithLock(AuthenticationFlowContext context, CredentialAndData cred) {
+        PushChallengeStore store = createChallengeStore(context.getSession());
+        String realmId = context.getRealm().getId();
+        String userId = context.getUser().getId();
+
+        // Acquire per-user lock to prevent race conditions in concurrent challenge creation
+        if (!store.tryAcquireCreationLock(realmId, userId)) {
+            // Another thread is currently creating a challenge for this user
+            context.failureChallenge(
+                    AuthenticationFlowError.GENERIC_AUTHENTICATION_ERROR,
+                    context.form()
+                            .setError("push-mfa-too-many-challenges")
+                            .createErrorPage(Response.Status.TOO_MANY_REQUESTS));
             return;
         }
-        if (checkWaitChallengeLimit(context)) {
-            return;
+
+        try {
+            if (checkPendingChallengeLimit(context, null)) {
+                return;
+            }
+            if (checkWaitChallengeLimit(context)) {
+                return;
+            }
+            issueAndShowChallenge(context, cred.credential, cred.data);
+        } finally {
+            store.releaseCreationLock(realmId, userId);
         }
-        issueAndShowChallenge(context, cred.credential, cred.data);
     }
 
     @Override
     public void action(AuthenticationFlowContext context) {
-        PushChallengeStore store = new PushChallengeStore(context.getSession());
+        PushChallengeStore store = createChallengeStore(context.getSession());
         AuthenticationSessionModel authSession = context.getAuthenticationSession();
         MultivaluedMap<String, String> form = context.getHttpRequest().getDecodedFormParameters();
         String challengeId = ChallengeNoteHelper.firstNonBlank(
@@ -140,7 +257,11 @@ public class PushMfaAuthenticator implements Authenticator {
         handleStatus(context, store, current);
     }
 
-    private void handleStatus(AuthenticationFlowContext context, PushChallengeStore store, PushChallenge ch) {
+    /**
+     * Handles the challenge status and transitions the authentication flow accordingly.
+     * Override to customize status handling behavior.
+     */
+    protected void handleStatus(AuthenticationFlowContext context, PushChallengeStore store, PushChallenge ch) {
         AuthenticationSessionModel authSession = context.getAuthenticationSession();
         switch (ch.getStatus()) {
             case APPROVED -> {
@@ -148,40 +269,45 @@ public class PushMfaAuthenticator implements Authenticator {
                 ChallengeNoteHelper.clear(authSession);
                 // Reset wait state on successful approval
                 resetWaitChallengeState(context);
+                onChallengeApproved(context, ch);
                 context.success();
             }
             case DENIED -> {
                 store.remove(ch.getId());
                 ChallengeNoteHelper.clear(authSession);
+                onChallengeDenied(context, ch);
                 showDeniedError(context);
             }
             case EXPIRED -> {
                 store.remove(ch.getId());
                 ChallengeNoteHelper.clear(authSession);
+                onChallengeExpired(context, ch);
                 showExpiredError(context);
             }
             case PENDING -> showWaitingFormForExisting(context, ch);
         }
     }
 
-    private void retryChallenge(AuthenticationFlowContext context, PushChallengeStore store) {
-        if (checkPendingChallengeLimit(context, null)) {
-            return;
-        }
-        if (checkWaitChallengeLimit(context)) {
-            return;
-        }
+    /**
+     * Retries the challenge by resolving credentials and issuing a new challenge.
+     * Override to customize retry behavior.
+     */
+    protected void retryChallenge(AuthenticationFlowContext context, PushChallengeStore store) {
         CredentialAndData cred = resolveCredential(context.getUser());
         if (cred == null) {
             context.success();
             return;
         }
-        issueAndShowChallenge(context, cred.credential, cred.data);
+        issueWithLock(context, cred);
     }
 
-    private void issueAndShowChallenge(
+    /**
+     * Issues a new challenge and displays the waiting form.
+     * Override to customize challenge creation or form display.
+     */
+    protected void issueAndShowChallenge(
             AuthenticationFlowContext context, CredentialModel cred, PushCredentialData data) {
-        PushChallengeStore store = new PushChallengeStore(context.getSession());
+        PushChallengeStore store = createChallengeStore(context.getSession());
         Duration ttl = AuthenticatorConfigHelper.parseDurationSeconds(
                 context.getAuthenticatorConfig(),
                 PushMfaConstants.LOGIN_CHALLENGE_TTL_CONFIG,
@@ -196,10 +322,15 @@ public class PushMfaAuthenticator implements Authenticator {
         // Record challenge creation for wait challenge rate limiting
         recordWaitChallengeCreated(context);
 
+        onChallengeCreated(context, issued.challenge());
         showWaitingForm(context, issued.challenge(), data, issued.confirmToken());
     }
 
-    private void showWaitingFormForExisting(AuthenticationFlowContext context, PushChallenge ch) {
+    /**
+     * Shows the waiting form for an existing challenge.
+     * Override to customize form display for existing challenges.
+     */
+    protected void showWaitingFormForExisting(AuthenticationFlowContext context, PushChallenge ch) {
         CredentialModel cred = resolveCredentialForChallenge(context.getUser(), ch);
         PushCredentialData data = cred != null ? PushCredentialService.readCredentialData(cred) : null;
         String confirmToken = (data != null && data.getCredentialId() != null)
@@ -214,7 +345,11 @@ public class PushMfaAuthenticator implements Authenticator {
         showWaitingForm(context, ch, data, confirmToken);
     }
 
-    private void showWaitingForm(
+    /**
+     * Shows the waiting form for a challenge.
+     * Override to customize form display.
+     */
+    protected void showWaitingForm(
             AuthenticationFlowContext context, PushChallenge ch, PushCredentialData data, String token) {
         String appLink = AuthenticatorConfigHelper.resolveAppUniversalLink(context.getAuthenticatorConfig(), "confirm");
         String sameDeviceToken = ChallengeUrlBuilder.buildSameDeviceToken(context, ch, data, token);
@@ -254,8 +389,14 @@ public class PushMfaAuthenticator implements Authenticator {
         return form.createForm("push-wait.ftl");
     }
 
-    private boolean checkPendingChallengeLimit(AuthenticationFlowContext context, String excludeId) {
-        PushChallengeStore store = new PushChallengeStore(context.getSession());
+    /**
+     * Checks if the pending challenge limit has been reached.
+     * Override to customize the limit policy.
+     *
+     * @return true if the limit is reached and the request should be blocked
+     */
+    protected boolean checkPendingChallengeLimit(AuthenticationFlowContext context, String excludeId) {
+        PushChallengeStore store = createChallengeStore(context.getSession());
         int maxPending = AuthenticatorConfigHelper.parsePositiveInt(
                 context.getAuthenticatorConfig(),
                 PushMfaConstants.MAX_PENDING_AUTH_CHALLENGES_CONFIG,
@@ -289,7 +430,11 @@ public class PushMfaAuthenticator implements Authenticator {
         return false;
     }
 
-    private boolean isExpectedChallenge(AuthenticationFlowContext context, PushChallenge ch) {
+    /**
+     * Validates whether the challenge belongs to the current authentication context.
+     * Override to customize challenge validation.
+     */
+    protected boolean isExpectedChallenge(AuthenticationFlowContext context, PushChallenge ch) {
         if (ch == null) {
             return false;
         }
@@ -310,7 +455,11 @@ public class PushMfaAuthenticator implements Authenticator {
         return true;
     }
 
-    private boolean isAuthSessionActive(AuthenticationFlowContext context, PushChallenge ch) {
+    /**
+     * Checks if the authentication session for a challenge is still active.
+     * Override to customize session validation.
+     */
+    protected boolean isAuthSessionActive(AuthenticationFlowContext context, PushChallenge ch) {
         String rootSession = ch.getRootSessionId();
         if (StringUtil.isBlank(rootSession)) {
             return true;
@@ -321,9 +470,11 @@ public class PushMfaAuthenticator implements Authenticator {
                 != null;
     }
 
-    private record CredentialAndData(CredentialModel credential, PushCredentialData data) {}
-
-    private CredentialAndData resolveCredential(UserModel user) {
+    /**
+     * Resolves the credential to use for authentication.
+     * Override to customize credential selection strategy.
+     */
+    protected CredentialAndData resolveCredential(UserModel user) {
         List<CredentialModel> credentials = PushCredentialService.getActiveCredentials(user);
         if (credentials.isEmpty()) {
             return null;
@@ -336,7 +487,11 @@ public class PushMfaAuthenticator implements Authenticator {
         return new CredentialAndData(cred, data);
     }
 
-    private CredentialModel resolveCredentialForChallenge(UserModel user, PushChallenge ch) {
+    /**
+     * Resolves the credential for a specific challenge.
+     * Override to customize credential resolution for existing challenges.
+     */
+    protected CredentialModel resolveCredentialForChallenge(UserModel user, PushChallenge ch) {
         if (ch.getCredentialId() != null) {
             CredentialModel byId = PushCredentialService.getCredentialById(user, ch.getCredentialId());
             if (byId != null) {
@@ -347,24 +502,39 @@ public class PushMfaAuthenticator implements Authenticator {
         return credentials.isEmpty() ? null : credentials.get(0);
     }
 
-    private String getRootSessionId(AuthenticationFlowContext context) {
+    /**
+     * Gets the root session ID for the current authentication context.
+     */
+    protected String getRootSessionId(AuthenticationFlowContext context) {
         var parent = context.getAuthenticationSession().getParentSession();
         return parent != null ? parent.getId() : null;
     }
 
-    private void showError(AuthenticationFlowContext context, String errorKey, Response.Status status) {
+    /**
+     * Shows a generic error page.
+     * Override to customize error display.
+     */
+    protected void showError(AuthenticationFlowContext context, String errorKey, Response.Status status) {
         context.failureChallenge(
                 AuthenticationFlowError.INTERNAL_ERROR,
                 context.form().setError(errorKey).createErrorPage(status));
     }
 
-    private void showExpiredError(AuthenticationFlowContext context) {
+    /**
+     * Shows the expired challenge error page.
+     * Override to customize the expired error display.
+     */
+    protected void showExpiredError(AuthenticationFlowContext context) {
         context.failureChallenge(
                 AuthenticationFlowError.EXPIRED_CODE,
                 context.form().setError("push-mfa-expired").createForm("push-expired.ftl"));
     }
 
-    private void showDeniedError(AuthenticationFlowContext context) {
+    /**
+     * Shows the denied challenge error page.
+     * Override to customize the denied error display.
+     */
+    protected void showDeniedError(AuthenticationFlowContext context) {
         context.failureChallenge(
                 AuthenticationFlowError.INVALID_CREDENTIALS,
                 context.form().setError("push-mfa-denied").createForm("push-denied.ftl"));
@@ -372,7 +542,13 @@ public class PushMfaAuthenticator implements Authenticator {
 
     // Wait challenge rate limiting methods
 
-    private boolean checkWaitChallengeLimit(AuthenticationFlowContext context) {
+    /**
+     * Checks if the wait challenge rate limit has been reached.
+     * Override to customize rate limiting behavior.
+     *
+     * @return true if the user must wait before creating a new challenge
+     */
+    protected boolean checkWaitChallengeLimit(AuthenticationFlowContext context) {
         if (!AuthenticatorConfigHelper.isWaitChallengeEnabled(context.getAuthenticatorConfig())) {
             return false;
         }
@@ -393,7 +569,11 @@ public class PushMfaAuthenticator implements Authenticator {
         return false;
     }
 
-    private void recordWaitChallengeCreated(AuthenticationFlowContext context) {
+    /**
+     * Records that a challenge was created for wait challenge rate limiting.
+     * Override to customize how challenge creation is tracked.
+     */
+    protected void recordWaitChallengeCreated(AuthenticationFlowContext context) {
         if (!AuthenticatorConfigHelper.isWaitChallengeEnabled(context.getAuthenticatorConfig())) {
             return;
         }
@@ -411,7 +591,11 @@ public class PushMfaAuthenticator implements Authenticator {
                 AuthenticatorConfigHelper.getWaitChallengeResetPeriod(context.getAuthenticatorConfig()));
     }
 
-    private void resetWaitChallengeState(AuthenticationFlowContext context) {
+    /**
+     * Resets the wait challenge state after successful approval.
+     * Override to customize reset behavior.
+     */
+    protected void resetWaitChallengeState(AuthenticationFlowContext context) {
         if (!AuthenticatorConfigHelper.isWaitChallengeEnabled(context.getAuthenticatorConfig())) {
             return;
         }
@@ -424,11 +608,19 @@ public class PushMfaAuthenticator implements Authenticator {
         provider.reset(context.getRealm().getId(), context.getUser().getId());
     }
 
-    private WaitChallengeStateProvider getWaitChallengeStateProvider(AuthenticationFlowContext context) {
+    /**
+     * Gets the wait challenge state provider.
+     * Override to provide a custom provider.
+     */
+    protected WaitChallengeStateProvider getWaitChallengeStateProvider(AuthenticationFlowContext context) {
         return context.getSession().getProvider(WaitChallengeStateProvider.class);
     }
 
-    private void showWaitRequiredError(AuthenticationFlowContext context, Duration remainingWait) {
+    /**
+     * Shows the wait required error page.
+     * Override to customize the wait error display.
+     */
+    protected void showWaitRequiredError(AuthenticationFlowContext context, Duration remainingWait) {
         context.challenge(context.form()
                 .setAttribute("waitSeconds", remainingWait.toSeconds())
                 .setError("push-mfa-wait-required")

@@ -18,6 +18,7 @@ package de.arbeitsagentur.keycloak.push.spi.waitchallenge;
 
 import de.arbeitsagentur.keycloak.push.challenge.WaitChallengeState;
 import de.arbeitsagentur.keycloak.push.spi.WaitChallengeStateProvider;
+import de.arbeitsagentur.keycloak.push.util.StorageKeyUtil;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.HashMap;
@@ -115,7 +116,7 @@ public class SingleUseObjectWaitChallengeStateProvider implements WaitChallengeS
     }
 
     private String key(String realmId, String userId) {
-        return KEY_PREFIX + realmId + ":" + userId;
+        return StorageKeyUtil.buildKey(KEY_PREFIX, realmId, userId);
     }
 
     private WaitChallengeState fromMap(Map<String, String> data) {

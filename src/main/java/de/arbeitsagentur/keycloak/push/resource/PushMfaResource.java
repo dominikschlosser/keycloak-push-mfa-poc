@@ -79,6 +79,7 @@ public class PushMfaResource {
     private static final PushMfaConfig CONFIG = PushMfaConfig.load();
     private static final PushMfaSseDispatcher SSE_DISPATCHER =
             new PushMfaSseDispatcher(CONFIG.sse().maxConnections());
+    private static final int SSE_RETRY_AFTER_SECONDS = 5;
 
     private final KeycloakSession session;
     private final PushChallengeStore challengeStore;
@@ -113,7 +114,13 @@ public class PushMfaResource {
         if (!accepted) {
             LOG.warnf("Rejecting enrollment SSE for %s due to maxConnections=%d", cid, SSE_DISPATCHER.maxConnections());
             try (SseEventSink s = sink) {
-                sseEmitter.sendStatusEvent(s, sse, "TOO_MANY_CONNECTIONS", null, SseEventEmitter.EventType.ENROLLMENT);
+                sseEmitter.sendStatusEvent(
+                        s,
+                        sse,
+                        "TOO_MANY_CONNECTIONS",
+                        null,
+                        SseEventEmitter.EventType.ENROLLMENT,
+                        SSE_RETRY_AFTER_SECONDS);
             }
         }
     }
@@ -387,7 +394,8 @@ public class PushMfaResource {
         if (!accepted) {
             LOG.warnf("Rejecting login SSE for %s due to maxConnections=%d", cid, SSE_DISPATCHER.maxConnections());
             try (SseEventSink s = sink) {
-                sseEmitter.sendStatusEvent(s, sse, "TOO_MANY_CONNECTIONS", null, SseEventEmitter.EventType.LOGIN);
+                sseEmitter.sendStatusEvent(
+                        s, sse, "TOO_MANY_CONNECTIONS", null, SseEventEmitter.EventType.LOGIN, SSE_RETRY_AFTER_SECONDS);
             }
         }
     }

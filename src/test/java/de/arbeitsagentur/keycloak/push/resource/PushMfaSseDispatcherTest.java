@@ -86,13 +86,8 @@ class PushMfaSseDispatcherTest {
         CountDownLatch finished = new CountDownLatch(1);
 
         assertTrue(dispatcher.submit(() -> {
-            try {
-                throw new RuntimeException("boom");
-            } catch (RuntimeException ignored) {
-                // ignore
-            } finally {
-                finished.countDown();
-            }
+            finished.countDown();
+            throw new RuntimeException("boom");
         }));
         assertTrue(finished.await(TIMEOUT.toSeconds(), TimeUnit.SECONDS));
 

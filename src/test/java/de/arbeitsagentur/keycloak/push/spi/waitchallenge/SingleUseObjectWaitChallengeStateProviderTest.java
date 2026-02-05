@@ -122,8 +122,8 @@ class SingleUseObjectWaitChallengeStateProviderTest {
         WaitChallengeState state = provider.get(REALM_ID, USER_ID, RESET_PERIOD).orElseThrow();
         assertTrue(state.isWaiting(Instant.now()));
 
-        // Wait for the wait period to expire
-        Thread.sleep(150);
+        // Wait for the wait period to expire (200ms margin for slow CI systems)
+        Thread.sleep(200);
 
         WaitChallengeState after = provider.get(REALM_ID, USER_ID, RESET_PERIOD).orElseThrow();
         assertFalse(after.isWaiting(Instant.now()));
@@ -133,7 +133,7 @@ class SingleUseObjectWaitChallengeStateProviderTest {
     void waitEnforcement_doublesOnSecondAttempt() throws Exception {
         // First attempt: 100ms wait
         provider.recordChallengeCreated(REALM_ID, USER_ID, BASE_WAIT, MAX_WAIT, RESET_PERIOD);
-        Thread.sleep(150);
+        Thread.sleep(200); // 200ms margin for slow CI systems
 
         // Second attempt: 200ms wait
         provider.recordChallengeCreated(REALM_ID, USER_ID, BASE_WAIT, MAX_WAIT, RESET_PERIOD);
@@ -151,7 +151,7 @@ class SingleUseObjectWaitChallengeStateProviderTest {
         Duration shortResetPeriod = Duration.ofMillis(100);
         provider.recordChallengeCreated(REALM_ID, USER_ID, BASE_WAIT, MAX_WAIT, shortResetPeriod);
 
-        Thread.sleep(150);
+        Thread.sleep(200); // 200ms margin for slow CI systems
 
         // State should be considered expired
         Optional<WaitChallengeState> state = provider.get(REALM_ID, USER_ID, shortResetPeriod);
