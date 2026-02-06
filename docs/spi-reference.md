@@ -81,7 +81,7 @@ Event type mappings to Keycloak events:
 | Push MFA Event | Keycloak EventType | Event Type Value | Error Code | Additional Detail Keys |
 |----------------|-------------------|------------------|------------|------------------------|
 | `ChallengeCreatedEvent` | `CUSTOM_REQUIRED_ACTION` | `CHALLENGE_CREATED` | - | `push_mfa_challenge_id`, `push_mfa_challenge_type`, `push_mfa_credential_id`, `push_mfa_user_verification` |
-| `ChallengeAcceptedEvent` | `LOGIN` | `CHALLENGE_ACCEPTED` | - | `push_mfa_challenge_id`, `push_mfa_challenge_type`, `push_mfa_credential_id`, `push_mfa_device_id` |
+| `ChallengeAcceptedEvent` | `CUSTOM_REQUIRED_ACTION` | `CHALLENGE_ACCEPTED` | - | `push_mfa_challenge_id`, `push_mfa_challenge_type`, `push_mfa_credential_id`, `push_mfa_device_id` |
 | `ChallengeDeniedEvent` | `LOGIN_ERROR` | `CHALLENGE_DENIED` | `push_mfa_challenge_denied` | `push_mfa_challenge_id`, `push_mfa_challenge_type`, `push_mfa_credential_id`, `push_mfa_device_id` |
 | `ChallengeResponseInvalidEvent` | `LOGIN_ERROR` | `CHALLENGE_RESPONSE_INVALID` | `push_mfa_invalid_response` | `push_mfa_challenge_id`, `push_mfa_credential_id`, `push_mfa_reason` |
 | `EnrollmentCompletedEvent` | `UPDATE_CREDENTIAL` | `ENROLLMENT_COMPLETED` | - | `credential_type`, `push_mfa_challenge_id`, `push_mfa_credential_id`, `push_mfa_device_id`, `push_mfa_device_type` |

@@ -72,7 +72,7 @@ class KeycloakEventBridgeListener implements PushMfaEventListener {
                 .add(PushMfaEventDetails.CREDENTIAL_ID, event.credentialId())
                 .add(PushMfaEventDetails.DEVICE_ID, event.deviceId());
 
-        emit(event.realmId(), event.userId(), event.clientId(), EventType.LOGIN, null, details);
+        emit(event.realmId(), event.userId(), event.clientId(), EventType.CUSTOM_REQUIRED_ACTION, null, details);
     }
 
     @Override
