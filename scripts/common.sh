@@ -25,6 +25,10 @@ PY
   fi
 }
 
+common::urlencode() {
+  python3 -c "import urllib.parse, sys; sys.stdout.write(urllib.parse.quote(sys.stdin.read(), safe=''))"
+}
+
 common::b64urlencode() {
   python3 -c "import base64, sys; data = sys.stdin.buffer.read(); sys.stdout.write(base64.urlsafe_b64encode(data).rstrip(b'=').decode('ascii'))"
 }

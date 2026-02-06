@@ -81,9 +81,10 @@ app.post('/confirm-login', async (req, res) => {
 
     const pendingUrl = new URL(LOGIN_PENDING_URL);
     pendingUrl.searchParams.set('userId', userId);
-    const pendingHtu = pendingUrl.toString();
+    // RFC 9449: htu must exclude query and fragment parts
+    const pendingHtu = LOGIN_PENDING_URL;
     const pendingDpop = await createDpopProof(credentialId, 'GET', pendingHtu);
-    const pendingResponse = await getPendingChallenges(pendingHtu, pendingDpop, accessToken);
+    const pendingResponse = await getPendingChallenges(pendingUrl.toString(), pendingDpop, accessToken);
     if (!pendingResponse.ok) {
       return res.status(pendingResponse.status).json({ error: `${await pendingResponse.text()}` });
     }

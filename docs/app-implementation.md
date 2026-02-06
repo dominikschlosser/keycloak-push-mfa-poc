@@ -36,7 +36,7 @@ When the confirm token arrives through Firebase (or when the user copies it from
 Before calling `/push-mfa/login/pending`, build a DPoP proof that includes:
 
 - HTTP method (`htm`)
-- Full URL (`htu`)
+- Request URL without query and fragment (`htu`, per [RFC 9449](https://www.rfc-editor.org/rfc/rfc9449#section-4.2))
 - `sub` (Keycloak user ID)
 - `deviceId`
 - `iat` (issued at timestamp)

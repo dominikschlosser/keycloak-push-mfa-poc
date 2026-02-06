@@ -33,6 +33,8 @@ import jakarta.ws.rs.NotAuthorizedException;
 import jakarta.ws.rs.NotFoundException;
 import jakarta.ws.rs.core.HttpHeaders;
 import jakarta.ws.rs.core.UriInfo;
+import java.net.URI;
+import java.net.URISyntaxException;
 import java.time.Instant;
 import java.util.List;
 import java.util.Objects;
@@ -111,8 +113,9 @@ public class DpopAuthenticator {
             }
 
             String htu = PushMfaInputValidator.require(jsonText(payload, "htu"), "htu");
-            String actualHtu = uriInfo.getRequestUri().toString();
-            if (!actualHtu.equals(htu)) {
+            String actualHtu = stripQueryAndFragment(uriInfo.getRequestUri().toString());
+            String normalizedHtu = stripQueryAndFragment(htu);
+            if (!actualHtu.equals(normalizedHtu)) {
                 throw new ForbiddenException("DPoP proof htu mismatch");
             }
 
@@ -300,5 +303,20 @@ public class DpopAuthenticator {
             return null;
         }
         return value.asText(null);
+    }
+
+    /**
+     * Strips query and fragment parts from a URI string per RFC 9449 Section 4.2.
+     *
+     * <p>Both the server's request URI and the client-provided {@code htu} are normalized this way
+     * so that old clients that include query parameters in {@code htu} remain compatible.
+     */
+    private static String stripQueryAndFragment(String uriString) {
+        try {
+            URI uri = new URI(uriString);
+            return new URI(uri.getScheme(), uri.getAuthority(), uri.getPath(), null, null).toString();
+        } catch (URISyntaxException ex) {
+            return uriString;
+        }
     }
 }

@@ -110,7 +110,8 @@ if [[ -z $ACCESS_TOKEN || $ACCESS_TOKEN == "null" ]]; then
 fi
 
 PENDING_URL="$REALM_BASE/push-mfa/login/pending"
-PENDING_HTU="$PENDING_URL?userId=$USER_ID"
+# RFC 9449: htu must exclude query and fragment parts
+PENDING_HTU="$PENDING_URL"
 echo ">> Demo: listing pending challenges (response is informational)"
 PENDING_DPOP=$(common::create_dpop_proof "GET" "$PENDING_HTU" "$KEY_FILE" "$PUBLIC_JWK" "$KID" "$USER_ID" "$DEVICE_ID" "$SIGNING_ALG")
 PENDING_RESPONSE=$(curl -s -G \

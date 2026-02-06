@@ -148,7 +148,7 @@ All push REST endpoints (except enrollment) rely on [OAuth 2.0 Demonstration of 
 
 1. **User key material** is generated during enrollment and stored as a credential on the user. Keep the private key on the device; Keycloak stores the public JWK (and an optional `deviceId` if you let a user enroll more than one device).
 2. **Access tokens** are obtained using the device client credentials (`push-device-client`) and an attached DPoP proof. The access token's `cnf.jkt` claim is bound to the user key's thumbprint.
-3. **API calls** supply both `Authorization: DPoP <access_token>` and a fresh `DPoP` header that contains the HTTP method (`htm`), URI (`htu`), timestamp (`iat`), nonce (`jti`), and the same `sub`/`deviceId` used at enrollment.
+3. **API calls** supply both `Authorization: DPoP <access_token>` and a fresh `DPoP` header that contains the HTTP method (`htm`), URI without query/fragment (`htu`, per [RFC 9449](https://www.rfc-editor.org/rfc/rfc9449#section-4.2)), timestamp (`iat`), nonce (`jti`), and the same `sub`/`deviceId` used at enrollment.
 4. **Server verification** re-checks the access token signature (using the realm key), ensures the `cnf.jkt` matches the stored JWK, validates the DPoP proof (signature with the user key, method/URL, `sub`/`deviceId`, freshness), and rejects the request if any of those steps fail. The device never sees the realm's signing key, and Keycloak never sees the private user key.
 
 ### DPoP Proof Structure
@@ -174,8 +174,8 @@ Payload:
 
 ```json
 {
-  "htm": "POST",
-  "htu": "https://example.com/realms/demo/push-mfa/login/pending?userId=87fa1c21-1b1e-4af8-98b1-1df2e90d3c3d",
+  "htm": "GET",
+  "htu": "https://example.com/realms/demo/push-mfa/login/pending",
   "iat": 1731402960,
   "jti": "6c1f8a0c-4c6e-4d67-b792-20fd3eb1adfc",
   "sub": "87fa1c21-1b1e-4af8-98b1-1df2e90d3c3d",

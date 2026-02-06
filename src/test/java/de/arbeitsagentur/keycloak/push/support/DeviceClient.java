@@ -194,10 +194,12 @@ public final class DeviceClient {
 
     public JsonNode fetchPendingChallenges() throws Exception {
         ensureAccessToken();
+        // RFC 9449: htu must exclude query and fragment parts
+        URI pendingBase = realmBase.resolve("push-mfa/login/pending");
         URI pendingUri = realmBase.resolve("push-mfa/login/pending?userId=" + urlEncode(state.userId()));
         HttpRequest request = HttpRequest.newBuilder(pendingUri)
                 .header("Authorization", "DPoP " + accessToken)
-                .header("DPoP", createDpopProof("GET", pendingUri))
+                .header("DPoP", createDpopProof("GET", pendingBase))
                 .header("Accept", "application/json")
                 .GET()
                 .build();

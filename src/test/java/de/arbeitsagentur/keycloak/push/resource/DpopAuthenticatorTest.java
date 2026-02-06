@@ -376,6 +376,85 @@ class DpopAuthenticatorTest {
         assertEquals("Missing field: htu", ex.getMessage());
     }
 
+    // ==================== HTU Query/Fragment Stripping Tests (RFC 9449) ====================
+
+    @Test
+    void htuWithoutQueryMatchesRequestUriWithQuery() throws Exception {
+        // RFC 9449-compliant client sends htu without query params
+        URI requestUriWithQuery = URI.create(REQUEST_URI + "?userId=user-123");
+        when(uriInfo.getRequestUri()).thenReturn(requestUriWithQuery);
+
+        // DPoP proof uses base URI (no query)
+        String dpopProof = createDpopProof(
+                HTTP_METHOD, REQUEST_URI, Instant.now(), UUID.randomUUID().toString());
+
+        when(headers.getHeaderString(HttpHeaders.AUTHORIZATION)).thenReturn("DPoP valid-token");
+        when(headers.getHeaderString("DPoP")).thenReturn(dpopProof);
+
+        DpopAuthenticator.DeviceAssertion result = authenticator.authenticate(headers, uriInfo, HTTP_METHOD);
+        assertNotNull(result);
+    }
+
+    @Test
+    void htuWithQueryMatchesRequestUriWithQuery_backwardsCompat() throws Exception {
+        // Old client sends htu with query params (backwards compatibility)
+        URI requestUriWithQuery = URI.create(REQUEST_URI + "?userId=user-123");
+        when(uriInfo.getRequestUri()).thenReturn(requestUriWithQuery);
+
+        // DPoP proof also includes query params
+        String dpopProof = createDpopProof(
+                HTTP_METHOD,
+                REQUEST_URI + "?userId=user-123",
+                Instant.now(),
+                UUID.randomUUID().toString());
+
+        when(headers.getHeaderString(HttpHeaders.AUTHORIZATION)).thenReturn("DPoP valid-token");
+        when(headers.getHeaderString("DPoP")).thenReturn(dpopProof);
+
+        DpopAuthenticator.DeviceAssertion result = authenticator.authenticate(headers, uriInfo, HTTP_METHOD);
+        assertNotNull(result);
+    }
+
+    @Test
+    void htuWithDifferentBasePath_rejected() throws Exception {
+        // htu base path does not match, even with query stripped
+        URI requestUriWithQuery = URI.create(REQUEST_URI + "?userId=user-123");
+        when(uriInfo.getRequestUri()).thenReturn(requestUriWithQuery);
+
+        String dpopProof = createDpopProof(
+                HTTP_METHOD,
+                "https://keycloak.example.com/realms/test-realm/push-mfa/wrong-path?userId=user-123",
+                Instant.now(),
+                UUID.randomUUID().toString());
+
+        when(headers.getHeaderString(HttpHeaders.AUTHORIZATION)).thenReturn("DPoP valid-token");
+        when(headers.getHeaderString("DPoP")).thenReturn(dpopProof);
+
+        ForbiddenException ex =
+                assertThrows(ForbiddenException.class, () -> authenticator.authenticate(headers, uriInfo, HTTP_METHOD));
+        assertEquals("DPoP proof htu mismatch", ex.getMessage());
+    }
+
+    @Test
+    void htuWithUrnUserIdEncodingDifference_strippedAndMatches() throws Exception {
+        // Request URI has percent-encoded URN userId; htu uses raw colons
+        // Both should match because query params are stripped from both sides
+        URI requestUriEncoded = URI.create(REQUEST_URI + "?userId=urn%3Abla%3A123");
+        when(uriInfo.getRequestUri()).thenReturn(requestUriEncoded);
+
+        String dpopProof = createDpopProof(
+                HTTP_METHOD,
+                REQUEST_URI + "?userId=urn:bla:123",
+                Instant.now(),
+                UUID.randomUUID().toString());
+
+        when(headers.getHeaderString(HttpHeaders.AUTHORIZATION)).thenReturn("DPoP valid-token");
+        when(headers.getHeaderString("DPoP")).thenReturn(dpopProof);
+
+        DpopAuthenticator.DeviceAssertion result = authenticator.authenticate(headers, uriInfo, HTTP_METHOD);
+        assertNotNull(result);
+    }
+
     // ==================== Issued At (iat) Validation Tests ====================
 
     @Test
