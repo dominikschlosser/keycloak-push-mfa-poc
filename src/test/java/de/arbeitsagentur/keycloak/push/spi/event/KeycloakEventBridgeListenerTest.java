@@ -97,7 +97,7 @@ class KeycloakEventBridgeListenerTest {
                 Instant.now()));
 
         var event = captured.get(0);
-        assertEquals(EventType.LOGIN, event.eventType());
+        assertEquals(EventType.CUSTOM_REQUIRED_ACTION, event.eventType());
         assertNull(event.error());
         assertEquals(EventTypes.CHALLENGE_ACCEPTED, event.details().get(EVENT_TYPE));
         assertEquals("device-1", event.details().get(DEVICE_ID));
