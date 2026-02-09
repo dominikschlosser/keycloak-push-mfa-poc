@@ -390,7 +390,7 @@ public class PushMfaResource {
                         device.credentialData().getDeviceId(),
                         Instant.now()));
 
-        LOG.infof(
+        LOG.debugf(
                 "User %s locked out by device %s",
                 user.getId(), device.credentialData().getDeviceId());
         return Response.ok(Map.of("status", "locked_out")).build();
