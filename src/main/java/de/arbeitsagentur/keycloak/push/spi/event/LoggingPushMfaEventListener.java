@@ -23,8 +23,8 @@ import org.jboss.logging.Logger;
  * Default implementation of {@link PushMfaEventListener} that logs all events.
  *
  * <p>This listener uses INFO level for the generic event log and DEBUG level
- * for specific event details. Warning events are logged for invalid responses
- * and denied key rotations.
+ * for specific event details. Warning events are logged for invalid challenge
+ * responses, denied key rotations, and DPoP authentication failures.
  */
 final class LoggingPushMfaEventListener implements PushMfaEventListener {
 
@@ -88,7 +88,7 @@ final class LoggingPushMfaEventListener implements PushMfaEventListener {
 
     @Override
     public void onUserLockedOut(UserLockedOutEvent event) {
-        LOG.warnf(
+        LOG.debugf(
                 "User locked out: user=%s, credential=%s, device=%s",
                 event.userId(), event.deviceCredentialId(), event.deviceId());
     }

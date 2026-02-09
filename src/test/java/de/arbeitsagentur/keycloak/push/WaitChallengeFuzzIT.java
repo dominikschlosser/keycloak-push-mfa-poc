@@ -782,8 +782,8 @@ class WaitChallengeFuzzIT {
         }
 
         @RepeatedTest(5)
-        @DisplayName("Concurrent challenge recordings do not lose updates")
-        void concurrentRecordings_noLostUpdates() throws Exception {
+        @DisplayName("Concurrent challenge recordings complete without errors")
+        void concurrentRecordings_completeWithoutErrors() throws Exception {
             int threadCount = 10;
             int operationsPerThread = 50;
             ExecutorService executor = Executors.newFixedThreadPool(threadCount);
