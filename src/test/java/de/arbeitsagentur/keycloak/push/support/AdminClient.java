@@ -164,6 +164,52 @@ public final class AdminClient {
         }
     }
 
+    public boolean isUserEnabled(String username) throws Exception {
+        ensureAccessToken();
+        String userId = findUserId(username);
+        if (userId == null || userId.isBlank()) {
+            throw new IllegalStateException("User not found: " + username);
+        }
+        URI userUri = baseUri.resolve("/admin/realms/demo/users/" + userId);
+        HttpResponse<String> response = http.send(
+                HttpRequest.newBuilder(userUri)
+                        .header("Authorization", "Bearer " + accessToken)
+                        .header("Accept", "application/json")
+                        .GET()
+                        .build(),
+                HttpResponse.BodyHandlers.ofString());
+        assertEquals(200, response.statusCode(), () -> "User fetch failed: " + response.body());
+        return MAPPER.readTree(response.body()).path("enabled").asBoolean(true);
+    }
+
+    public void enableUser(String username) throws Exception {
+        ensureAccessToken();
+        String userId = findUserId(username);
+        if (userId == null || userId.isBlank()) {
+            throw new IllegalStateException("User not found: " + username);
+        }
+        URI userUri = baseUri.resolve("/admin/realms/demo/users/" + userId);
+        HttpResponse<String> getResponse = http.send(
+                HttpRequest.newBuilder(userUri)
+                        .header("Authorization", "Bearer " + accessToken)
+                        .header("Accept", "application/json")
+                        .GET()
+                        .build(),
+                HttpResponse.BodyHandlers.ofString());
+        assertEquals(200, getResponse.statusCode(), () -> "User fetch failed: " + getResponse.body());
+        ObjectNode userObject = (ObjectNode) MAPPER.readTree(getResponse.body());
+        userObject.put("enabled", true);
+        HttpResponse<String> putResponse = http.send(
+                HttpRequest.newBuilder(userUri)
+                        .header("Authorization", "Bearer " + accessToken)
+                        .header("Content-Type", "application/json")
+                        .PUT(HttpRequest.BodyPublishers.ofString(userObject.toString()))
+                        .build(),
+                HttpResponse.BodyHandlers.ofString());
+        assertEquals(204, putResponse.statusCode(), () -> "Enable user failed: " + putResponse.body());
+        clearRealmCaches();
+    }
+
     public void logoutAllSessions(String username) throws Exception {
         String userId = findUserId(username);
         if (userId == null || userId.isBlank()) {

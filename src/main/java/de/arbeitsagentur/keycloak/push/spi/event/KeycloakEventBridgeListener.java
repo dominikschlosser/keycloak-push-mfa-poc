@@ -152,6 +152,22 @@ class KeycloakEventBridgeListener implements PushMfaEventListener {
     }
 
     @Override
+    public void onUserLockedOut(UserLockedOutEvent event) {
+        var details = new EventDetails()
+                .add(PushMfaEventDetails.EVENT_TYPE, PushMfaEventDetails.EventTypes.USER_LOCKED_OUT)
+                .add(PushMfaEventDetails.DEVICE_CREDENTIAL_ID, event.deviceCredentialId())
+                .add(PushMfaEventDetails.DEVICE_ID, event.deviceId());
+
+        emit(
+                event.realmId(),
+                event.userId(),
+                null,
+                EventType.LOGIN_ERROR,
+                PushMfaEventDetails.ErrorCodes.USER_LOCKED_OUT,
+                details);
+    }
+
+    @Override
     public void onDpopAuthenticationFailed(DpopAuthenticationFailedEvent event) {
         var details = new EventDetails()
                 .add(PushMfaEventDetails.EVENT_TYPE, PushMfaEventDetails.EventTypes.DPOP_AUTHENTICATION_FAILED)

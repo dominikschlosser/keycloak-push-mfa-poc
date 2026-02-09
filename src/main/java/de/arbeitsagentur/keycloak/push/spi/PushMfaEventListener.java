@@ -25,6 +25,7 @@ import de.arbeitsagentur.keycloak.push.spi.event.EnrollmentCompletedEvent;
 import de.arbeitsagentur.keycloak.push.spi.event.KeyRotatedEvent;
 import de.arbeitsagentur.keycloak.push.spi.event.KeyRotationDeniedEvent;
 import de.arbeitsagentur.keycloak.push.spi.event.PushMfaEvent;
+import de.arbeitsagentur.keycloak.push.spi.event.UserLockedOutEvent;
 import org.keycloak.provider.Provider;
 
 /**
@@ -93,6 +94,13 @@ public interface PushMfaEventListener extends Provider {
      * @param event the DPoP authentication failed event
      */
     default void onDpopAuthenticationFailed(DpopAuthenticationFailedEvent event) {}
+
+    /**
+     * Called when a device requests to lock out the user's account.
+     *
+     * @param event the user locked out event
+     */
+    default void onUserLockedOut(UserLockedOutEvent event) {}
 
     /**
      * Generic event handler called for all events before the specific handler.

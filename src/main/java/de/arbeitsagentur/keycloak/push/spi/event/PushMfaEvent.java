@@ -32,7 +32,8 @@ public sealed interface PushMfaEvent
                 EnrollmentCompletedEvent,
                 KeyRotatedEvent,
                 KeyRotationDeniedEvent,
-                DpopAuthenticationFailedEvent {
+                DpopAuthenticationFailedEvent,
+                UserLockedOutEvent {
 
     /** Event type identifier for logging and routing purposes. */
     String eventType();

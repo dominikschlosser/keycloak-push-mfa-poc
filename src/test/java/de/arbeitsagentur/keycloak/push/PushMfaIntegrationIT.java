@@ -577,6 +577,46 @@ class PushMfaIntegrationIT {
     }
 
     @Test
+    void deviceLocksOutUser() throws Exception {
+        DeviceClient deviceClient = enrollDevice();
+        assertTrue(adminClient.isUserEnabled(TEST_USERNAME), "User should be enabled before lockout");
+
+        String status = deviceClient.lockoutUser();
+        assertEquals("locked_out", status);
+
+        assertFalse(adminClient.isUserEnabled(TEST_USERNAME), "User should be disabled after lockout");
+
+        // Re-enable user for subsequent tests
+        adminClient.enableUser(TEST_USERNAME);
+        assertTrue(adminClient.isUserEnabled(TEST_USERNAME), "User should be re-enabled after admin action");
+    }
+
+    @Test
+    void lockoutOnlyAffectsAuthenticatedUser() throws Exception {
+        try {
+            adminClient.ensureUser(ATTACKER_USERNAME, ATTACKER_PASSWORD);
+
+            DeviceClient victimDevice = enrollDevice(TEST_USERNAME, TEST_PASSWORD, DeviceKeyType.RSA);
+            DeviceClient attackerDevice = enrollDevice(ATTACKER_USERNAME, ATTACKER_PASSWORD, DeviceKeyType.RSA);
+
+            assertTrue(adminClient.isUserEnabled(TEST_USERNAME), "Victim should be enabled before lockout");
+            assertTrue(adminClient.isUserEnabled(ATTACKER_USERNAME), "Attacker should be enabled before lockout");
+
+            // Attacker locks out their own account
+            String status = attackerDevice.lockoutUser();
+            assertEquals("locked_out", status);
+
+            // Only attacker is locked out, victim remains enabled
+            assertTrue(adminClient.isUserEnabled(TEST_USERNAME), "Victim must not be affected by attacker lockout");
+            assertFalse(
+                    adminClient.isUserEnabled(ATTACKER_USERNAME),
+                    "Attacker should be disabled after their own lockout");
+        } finally {
+            adminClient.enableUser(ATTACKER_USERNAME);
+        }
+    }
+
+    @Test
     void deviceRotatesKeyAndAuthenticates() throws Exception {
         DeviceClient deviceClient = enrollDevice();
         DeviceSigningKey rotatedKey = DeviceSigningKey.generateRsa();

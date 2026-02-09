@@ -62,6 +62,7 @@ The extension provides an event SPI that allows you to react to push MFA lifecyc
 | `KeyRotatedEvent` | Device key was successfully rotated | `userId`, `deviceCredentialId`, `deviceId` |
 | `KeyRotationDeniedEvent` | Key rotation request failed validation | `userId`, `deviceCredentialId`, `reason` |
 | `DpopAuthenticationFailedEvent` | DPoP authentication failed for device API request | `userId`, `deviceCredentialId`, `reason`, `httpMethod`, `requestPath` |
+| `UserLockedOutEvent` | Device requested user account lockout | `userId`, `deviceCredentialId`, `deviceId` |
 
 All events include `realmId`, `userId` (may be null for early auth failures), and `timestamp`.
 
@@ -89,6 +90,7 @@ Event type mappings to Keycloak events:
 | `KeyRotatedEvent` | `UPDATE_CREDENTIAL` | `KEY_ROTATED` | - | `credential_type`, `push_mfa_credential_id`, `push_mfa_device_id` |
 | `KeyRotationDeniedEvent` | `UPDATE_CREDENTIAL_ERROR` | `KEY_ROTATION_DENIED` | `push_mfa_key_rotation_denied` | `credential_type`, `push_mfa_credential_id`, `push_mfa_reason` |
 | `DpopAuthenticationFailedEvent` | `LOGIN_ERROR` | `DPOP_AUTHENTICATION_FAILED` | `push_mfa_dpop_auth_failed` | `push_mfa_credential_id`, `push_mfa_reason`, `push_mfa_http_method`, `push_mfa_request_path` |
+| `UserLockedOutEvent` | `LOGIN_ERROR` | `USER_LOCKED_OUT` | `push_mfa_user_locked_out` | `push_mfa_credential_id`, `push_mfa_device_id` |
 
 - **Event Type Value**: Value of the `push_mfa_event_type` detail; use this to distinguish events sharing the same Keycloak EventType
 - **Error Code**: Value returned by `Event.getError()` for error events
@@ -155,6 +157,7 @@ public void onEvent(Event event) {
 | `KEY_ROTATED` | `KEY_ROTATED` |
 | `KEY_ROTATION_DENIED` | `KEY_ROTATION_DENIED` |
 | `DPOP_AUTHENTICATION_FAILED` | `DPOP_AUTHENTICATION_FAILED` |
+| `USER_LOCKED_OUT` | `USER_LOCKED_OUT` |
 
 **Error Code Constants** (`PushMfaEventDetails.ErrorCodes.*`):
 
@@ -164,6 +167,7 @@ public void onEvent(Event event) {
 | `INVALID_RESPONSE` | `push_mfa_invalid_response` |
 | `KEY_ROTATION_DENIED` | `push_mfa_key_rotation_denied` |
 | `DPOP_AUTH_FAILED` | `push_mfa_dpop_auth_failed` |
+| `USER_LOCKED_OUT` | `push_mfa_user_locked_out` |
 
 ### Multiple Active Listeners
 

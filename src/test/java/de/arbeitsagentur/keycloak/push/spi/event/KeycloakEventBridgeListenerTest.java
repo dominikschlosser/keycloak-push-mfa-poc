@@ -180,6 +180,19 @@ class KeycloakEventBridgeListenerTest {
     }
 
     @Test
+    void onUserLockedOut() {
+        listener.onUserLockedOut(new UserLockedOutEvent("test-realm", "user-1", "cred-1", "device-1", Instant.now()));
+
+        assertEquals(1, captured.size());
+        var event = captured.get(0);
+        assertEquals(EventType.LOGIN_ERROR, event.eventType());
+        assertEquals(ErrorCodes.USER_LOCKED_OUT, event.error());
+        assertEquals(EventTypes.USER_LOCKED_OUT, event.details().get(EVENT_TYPE));
+        assertEquals("cred-1", event.details().get(DEVICE_CREDENTIAL_ID));
+        assertEquals("device-1", event.details().get(DEVICE_ID));
+    }
+
+    @Test
     void omitsNullOptionalFields() {
         listener.onChallengeCreated(new ChallengeCreatedEvent(
                 "test-realm", "user-1", "chal-1", null, null, null, null, Instant.now(), Instant.now()));
