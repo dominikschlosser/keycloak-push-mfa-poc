@@ -89,6 +89,25 @@ Mismatch (`403`):
 { "error": "User verification mismatch" }
 ```
 
+## Lock Out User
+
+```
+POST /realms/<realm>/push-mfa/login/lockout
+Authorization: DPoP <access-token>
+DPoP: <proof JWT>
+```
+
+No request body. The DPoP proof authenticates the device and identifies the user. Keycloak disables the user account (`enabled=false`), preventing any further logins until an administrator re-enables the account.
+
+This endpoint acts as a panic button: if the user suspects their account is compromised, the mobile app can immediately lock the account from the device.
+
+**Response:**
+```json
+{
+  "status": "locked_out"
+}
+```
+
 ## Update the Push Provider
 
 ```

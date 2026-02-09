@@ -159,6 +159,18 @@ class PushMfaEventTest {
     }
 
     @Test
+    void userLockedOutEventHasCorrectType() {
+        UserLockedOutEvent event = new UserLockedOutEvent(REALM_ID, USER_ID, CREDENTIAL_ID, DEVICE_ID, TIMESTAMP);
+
+        assertEquals(EventTypes.USER_LOCKED_OUT, event.eventType());
+        assertEquals(REALM_ID, event.realmId());
+        assertEquals(USER_ID, event.userId());
+        assertEquals(CREDENTIAL_ID, event.deviceCredentialId());
+        assertEquals(DEVICE_ID, event.deviceId());
+        assertEquals(TIMESTAMP, event.timestamp());
+    }
+
+    @Test
     void dpopAuthenticationFailedEventAllowsNullUserAndCredential() {
         DpopAuthenticationFailedEvent event = new DpopAuthenticationFailedEvent(
                 REALM_ID, null, null, "Invalid access token", "GET", "/path", TIMESTAMP);
@@ -218,7 +230,8 @@ class PushMfaEventTest {
             new EnrollmentCompletedEvent(REALM_ID, USER_ID, CHALLENGE_ID, CREDENTIAL_ID, DEVICE_ID, "ios", TIMESTAMP),
             new KeyRotatedEvent(REALM_ID, USER_ID, CREDENTIAL_ID, DEVICE_ID, TIMESTAMP),
             new KeyRotationDeniedEvent(REALM_ID, USER_ID, CREDENTIAL_ID, "reason", TIMESTAMP),
-            new DpopAuthenticationFailedEvent(REALM_ID, USER_ID, CREDENTIAL_ID, "reason", "POST", "/path", TIMESTAMP)
+            new DpopAuthenticationFailedEvent(REALM_ID, USER_ID, CREDENTIAL_ID, "reason", "POST", "/path", TIMESTAMP),
+            new UserLockedOutEvent(REALM_ID, USER_ID, CREDENTIAL_ID, DEVICE_ID, TIMESTAMP)
         };
 
         for (PushMfaEvent event : events) {

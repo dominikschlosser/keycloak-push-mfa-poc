@@ -87,6 +87,13 @@ final class LoggingPushMfaEventListener implements PushMfaEventListener {
     }
 
     @Override
+    public void onUserLockedOut(UserLockedOutEvent event) {
+        LOG.warnf(
+                "User locked out: user=%s, credential=%s, device=%s",
+                event.userId(), event.deviceCredentialId(), event.deviceId());
+    }
+
+    @Override
     public void onDpopAuthenticationFailed(DpopAuthenticationFailedEvent event) {
         LOG.warnf(
                 "DPoP authentication failed: user=%s, credential=%s, method=%s, path=%s, reason=%s",

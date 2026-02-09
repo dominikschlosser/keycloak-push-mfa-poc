@@ -147,6 +147,23 @@ public final class DeviceClient {
         return http.send(request, HttpResponse.BodyHandlers.ofString());
     }
 
+    public String lockoutUser() throws Exception {
+        HttpResponse<String> response = lockoutUserRaw();
+        assertEquals(200, response.statusCode(), () -> "Lockout failed: " + response.body());
+        return MAPPER.readTree(response.body()).path("status").asText();
+    }
+
+    public HttpResponse<String> lockoutUserRaw() throws Exception {
+        ensureAccessToken();
+        URI lockoutUri = realmBase.resolve("push-mfa/login/lockout");
+        HttpRequest request = HttpRequest.newBuilder(lockoutUri)
+                .header("Authorization", "DPoP " + accessToken)
+                .header("DPoP", createDpopProof("POST", lockoutUri))
+                .POST(HttpRequest.BodyPublishers.noBody())
+                .build();
+        return http.send(request, HttpResponse.BodyHandlers.ofString());
+    }
+
     public String updatePushProvider(String pushProviderId, String pushProviderType) throws Exception {
         ensureAccessToken();
         URI updateUri = realmBase.resolve("push-mfa/device/push-provider");

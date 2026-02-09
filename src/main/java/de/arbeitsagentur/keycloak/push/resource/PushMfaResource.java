@@ -30,6 +30,7 @@ import de.arbeitsagentur.keycloak.push.spi.event.EnrollmentCompletedEvent;
 import de.arbeitsagentur.keycloak.push.spi.event.KeyRotatedEvent;
 import de.arbeitsagentur.keycloak.push.spi.event.KeyRotationDeniedEvent;
 import de.arbeitsagentur.keycloak.push.spi.event.PushMfaEventService;
+import de.arbeitsagentur.keycloak.push.spi.event.UserLockedOutEvent;
 import de.arbeitsagentur.keycloak.push.util.PushMfaConfig;
 import de.arbeitsagentur.keycloak.push.util.PushMfaConstants;
 import de.arbeitsagentur.keycloak.push.util.PushMfaInputValidator;
@@ -371,6 +372,28 @@ public class PushMfaResource {
                         Instant.now()));
 
         return Response.ok(Map.of("status", "approved")).build();
+    }
+
+    @POST
+    @Path("login/lockout")
+    public Response lockoutUser(@Context HttpHeaders headers, @Context UriInfo uriInfo) {
+        DpopAuthenticator.DeviceAssertion device = dpopAuth.authenticate(headers, uriInfo, "POST");
+        UserModel user = device.user();
+        user.setEnabled(false);
+
+        PushMfaEventService.fire(
+                session,
+                new UserLockedOutEvent(
+                        realm().getId(),
+                        user.getId(),
+                        device.credentialData().getDeviceCredentialId(),
+                        device.credentialData().getDeviceId(),
+                        Instant.now()));
+
+        LOG.infof(
+                "User %s locked out by device %s",
+                user.getId(), device.credentialData().getDeviceId());
+        return Response.ok(Map.of("status", "locked_out")).build();
     }
 
     @GET

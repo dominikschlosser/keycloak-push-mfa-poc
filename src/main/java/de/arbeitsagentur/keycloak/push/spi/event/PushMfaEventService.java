@@ -75,6 +75,7 @@ public final class PushMfaEventService {
             case KeyRotatedEvent e -> listener.onKeyRotated(e);
             case KeyRotationDeniedEvent e -> listener.onKeyRotationDenied(e);
             case DpopAuthenticationFailedEvent e -> listener.onDpopAuthenticationFailed(e);
+            case UserLockedOutEvent e -> listener.onUserLockedOut(e);
         }
     }
 }

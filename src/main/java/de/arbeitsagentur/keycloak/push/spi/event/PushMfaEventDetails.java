@@ -104,6 +104,9 @@ public final class PushMfaEventDetails {
 
         /** DPoP authentication failed for device API request. */
         public static final String DPOP_AUTHENTICATION_FAILED = "DPOP_AUTHENTICATION_FAILED";
+
+        /** User account was locked out by device request. */
+        public static final String USER_LOCKED_OUT = "USER_LOCKED_OUT";
     }
 
     /**
@@ -125,5 +128,8 @@ public final class PushMfaEventDetails {
 
         /** DPoP authentication failed. */
         public static final String DPOP_AUTH_FAILED = "push_mfa_dpop_auth_failed";
+
+        /** User account was locked out by device. */
+        public static final String USER_LOCKED_OUT = "push_mfa_user_locked_out";
     }
 }
