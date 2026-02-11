@@ -28,6 +28,7 @@ import java.util.ArrayList;
 import java.util.List;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.keycloak.Config;
 import org.keycloak.events.Details;
 import org.keycloak.events.EventType;
 import org.keycloak.models.KeycloakSession;
@@ -58,6 +59,22 @@ class KeycloakEventBridgeListenerTest {
         var factory = new KeycloakEventBridgeListenerFactory();
         assertEquals("keycloak-event-bridge", factory.getId());
         assertInstanceOf(KeycloakEventBridgeListener.class, factory.create(session));
+    }
+
+    @Test
+    void factoryDisabledByDefault() {
+        var factory = new KeycloakEventBridgeListenerFactory();
+        var config = mock(Config.Scope.class);
+        when(config.getBoolean("enabled", false)).thenReturn(false);
+        assertFalse(factory.isSupported(config));
+    }
+
+    @Test
+    void factoryEnabledWhenConfigured() {
+        var factory = new KeycloakEventBridgeListenerFactory();
+        var config = mock(Config.Scope.class);
+        when(config.getBoolean("enabled", false)).thenReturn(true);
+        assertTrue(factory.isSupported(config));
     }
 
     @Test

@@ -68,7 +68,7 @@ All events include `realmId`, `userId` (may be null for early auth failures), `c
 
 ### Built-in Listeners
 
-The extension ships with two default listeners that are active out of the box:
+The extension ships with two built-in listeners:
 
 #### Keycloak Event Bridge (`keycloak-event-bridge`)
 
@@ -77,6 +77,18 @@ This listener bridges Push MFA events to Keycloak's standard event system, makin
 - **Keycloak Admin Console** (Events tab)
 - **Keycloak Event Store** (database, queryable via Admin API)
 - **Standard Keycloak EventListenerProviders** (for SIEM integration, webhooks, etc.)
+
+**This listener is disabled by default.** To enable it, add the following to your Keycloak configuration (`keycloak.conf` or CLI):
+
+```properties
+spi-push-mfa-event-listener--keycloak-event-bridge--enabled=true
+```
+
+Or via environment variable:
+
+```bash
+KC_SPI_PUSH_MFA_EVENT_LISTENER__KEYCLOAK_EVENT_BRIDGE__ENABLED=true
+```
 
 Event type mappings to Keycloak events:
 
@@ -173,7 +185,7 @@ public void onEvent(Event event) {
 
 The Push MFA Event SPI supports multiple active listeners simultaneously. All registered listeners receive every event, wrapped in exception handling to prevent one failing listener from affecting others. This means you can:
 
-- Use the built-in Keycloak bridge for Admin Console visibility
+- Enable the Keycloak event bridge for Admin Console visibility
 - Use the logging listener for debugging
 - Add your own custom listeners for metrics, webhooks, or external integrations
 
@@ -235,7 +247,7 @@ Register the factory via the service loader file:
 META-INF/services/de.arbeitsagentur.keycloak.push.spi.PushMfaEventListenerFactory
 ```
 
-Your custom listener will run alongside the built-in listeners (Keycloak event bridge and logging).
+Your custom listener will run alongside any other active listeners (logging listener and, if enabled, the Keycloak event bridge).
 
 ### Thread Safety
 
