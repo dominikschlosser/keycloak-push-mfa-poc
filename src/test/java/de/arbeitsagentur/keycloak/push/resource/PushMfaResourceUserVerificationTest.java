@@ -53,7 +53,7 @@ class PushMfaResourceUserVerificationTest {
 
         assertThrows(
                 ForbiddenException.class,
-                () -> resource.verifyUserVerification(session, challenge, payload, "cred-id"));
+                () -> resource.verifyUserVerification(session, challenge, payload, "cred-id", "test-client"));
     }
 
     @Test
@@ -64,7 +64,7 @@ class PushMfaResourceUserVerificationTest {
         ObjectNode payload = MAPPER.createObjectNode().put("userVerification", "0123");
 
         // Should not throw any exception
-        resource.verifyUserVerification(session, challenge, payload, "cred-id");
+        resource.verifyUserVerification(session, challenge, payload, "cred-id", "test-client");
     }
 
     @Test
@@ -94,7 +94,7 @@ class PushMfaResourceUserVerificationTest {
         ObjectNode payload = MAPPER.createObjectNode().put("userVerification", "42");
 
         // Should not throw any exception
-        resource.verifyUserVerification(session, challenge, payload, "cred-id");
+        resource.verifyUserVerification(session, challenge, payload, "cred-id", "test-client");
     }
 
     @Test
@@ -106,7 +106,7 @@ class PushMfaResourceUserVerificationTest {
 
         assertThrows(
                 ForbiddenException.class,
-                () -> resource.verifyUserVerification(session, challenge, payload, "cred-id"));
+                () -> resource.verifyUserVerification(session, challenge, payload, "cred-id", "test-client"));
     }
 
     @Test
@@ -130,7 +130,7 @@ class PushMfaResourceUserVerificationTest {
         ObjectNode payload = MAPPER.createObjectNode();
 
         // Should not throw any exception even without userVerification in payload
-        resource.verifyUserVerification(session, challenge, payload, "cred-id");
+        resource.verifyUserVerification(session, challenge, payload, "cred-id", "test-client");
     }
 
     @Test
@@ -160,7 +160,7 @@ class PushMfaResourceUserVerificationTest {
 
         assertThrows(
                 ForbiddenException.class,
-                () -> resource.verifyUserVerification(session, challenge, payload, appCredentialId));
+                () -> resource.verifyUserVerification(session, challenge, payload, appCredentialId, "test-client"));
 
         assertNotNull(capturedEvent.get(), "ChallengeResponseInvalidEvent should have been fired");
         assertEquals(

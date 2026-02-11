@@ -124,22 +124,24 @@ class KeycloakEventBridgeListenerTest {
     @Test
     void onChallengeResponseInvalid() {
         listener.onChallengeResponseInvalid(new ChallengeResponseInvalidEvent(
-                "test-realm", "user-1", "chal-1", "cred-1", "Bad signature", Instant.now()));
+                "test-realm", "user-1", "chal-1", "cred-1", "client-1", "Bad signature", Instant.now()));
 
         var event = captured.get(0);
         assertEquals(EventType.LOGIN_ERROR, event.eventType());
         assertEquals(ErrorCodes.INVALID_RESPONSE, event.error());
+        assertEquals("client-1", event.clientId());
         assertEquals("Bad signature", event.details().get(REASON));
     }
 
     @Test
     void onEnrollmentCompleted() {
         listener.onEnrollmentCompleted(new EnrollmentCompletedEvent(
-                "test-realm", "user-1", "chal-1", "cred-1", "device-1", "iOS", Instant.now()));
+                "test-realm", "user-1", "chal-1", "cred-1", "client-1", "device-1", "iOS", Instant.now()));
 
         var event = captured.get(0);
         assertEquals(EventType.UPDATE_CREDENTIAL, event.eventType());
         assertNull(event.error());
+        assertEquals("client-1", event.clientId());
         assertEquals(PushMfaConstants.CREDENTIAL_TYPE, event.details().get(Details.CREDENTIAL_TYPE));
         assertEquals(EventTypes.ENROLLMENT_COMPLETED, event.details().get(EVENT_TYPE));
         assertEquals("iOS", event.details().get(DEVICE_TYPE));
@@ -147,10 +149,12 @@ class KeycloakEventBridgeListenerTest {
 
     @Test
     void onKeyRotated() {
-        listener.onKeyRotated(new KeyRotatedEvent("test-realm", "user-1", "cred-1", "device-1", Instant.now()));
+        listener.onKeyRotated(
+                new KeyRotatedEvent("test-realm", "user-1", "cred-1", "client-1", "device-1", Instant.now()));
 
         var event = captured.get(0);
         assertEquals(EventType.UPDATE_CREDENTIAL, event.eventType());
+        assertEquals("client-1", event.clientId());
         assertNull(event.error());
         assertEquals(EventTypes.KEY_ROTATED, event.details().get(EVENT_TYPE));
         assertEquals(PushMfaConstants.CREDENTIAL_TYPE, event.details().get(Details.CREDENTIAL_TYPE));
@@ -159,10 +163,11 @@ class KeycloakEventBridgeListenerTest {
     @Test
     void onKeyRotationDenied() {
         listener.onKeyRotationDenied(
-                new KeyRotationDeniedEvent("test-realm", "user-1", "cred-1", "Invalid key", Instant.now()));
+                new KeyRotationDeniedEvent("test-realm", "user-1", "cred-1", "client-1", "Invalid key", Instant.now()));
 
         var event = captured.get(0);
         assertEquals(EventType.UPDATE_CREDENTIAL_ERROR, event.eventType());
+        assertEquals("client-1", event.clientId());
         assertEquals(ErrorCodes.KEY_ROTATION_DENIED, event.error());
         assertEquals(PushMfaConstants.CREDENTIAL_TYPE, event.details().get(Details.CREDENTIAL_TYPE));
     }
@@ -170,10 +175,11 @@ class KeycloakEventBridgeListenerTest {
     @Test
     void onDpopAuthenticationFailed() {
         listener.onDpopAuthenticationFailed(new DpopAuthenticationFailedEvent(
-                "test-realm", "user-1", "cred-1", "Signature mismatch", "POST", "/path", Instant.now()));
+                "test-realm", "user-1", "cred-1", "client-1", "Signature mismatch", "POST", "/path", Instant.now()));
 
         var event = captured.get(0);
         assertEquals(EventType.LOGIN_ERROR, event.eventType());
+        assertEquals("client-1", event.clientId());
         assertEquals(ErrorCodes.DPOP_AUTH_FAILED, event.error());
         assertEquals("POST", event.details().get(HTTP_METHOD));
         assertEquals("/path", event.details().get(REQUEST_PATH));
@@ -181,11 +187,13 @@ class KeycloakEventBridgeListenerTest {
 
     @Test
     void onUserLockedOut() {
-        listener.onUserLockedOut(new UserLockedOutEvent("test-realm", "user-1", "cred-1", "device-1", Instant.now()));
+        listener.onUserLockedOut(
+                new UserLockedOutEvent("test-realm", "user-1", "cred-1", "client-1", "device-1", Instant.now()));
 
         assertEquals(1, captured.size());
         var event = captured.get(0);
         assertEquals(EventType.LOGIN_ERROR, event.eventType());
+        assertEquals("client-1", event.clientId());
         assertEquals(ErrorCodes.USER_LOCKED_OUT, event.error());
         assertEquals(EventTypes.USER_LOCKED_OUT, event.details().get(EVENT_TYPE));
         assertEquals("cred-1", event.details().get(DEVICE_CREDENTIAL_ID));

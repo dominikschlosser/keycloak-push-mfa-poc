@@ -24,11 +24,12 @@ import java.time.Instant;
  * @param realmId      Realm where the key was rotated
  * @param userId       User who owns the credential
  * @param deviceCredentialId Credential whose key was rotated
+ * @param clientId     OAuth client ID from the access token
  * @param deviceId     Device that rotated its key
  * @param timestamp    When this event occurred
  */
 public record KeyRotatedEvent(
-        String realmId, String userId, String deviceCredentialId, String deviceId, Instant timestamp)
+        String realmId, String userId, String deviceCredentialId, String clientId, String deviceId, Instant timestamp)
         implements PushMfaEvent {
 
     @Override

@@ -38,6 +38,7 @@ import java.net.URISyntaxException;
 import java.time.Instant;
 import java.util.List;
 import java.util.Objects;
+import org.keycloak.OAuth2Constants;
 import org.keycloak.TokenVerifier;
 import org.keycloak.common.VerificationException;
 import org.keycloak.credential.CredentialModel;
@@ -74,7 +75,8 @@ public class DpopAuthenticator {
         return session.getContext().getRealm();
     }
 
-    public record DeviceAssertion(UserModel user, CredentialModel credential, PushCredentialData credentialData) {}
+    public record DeviceAssertion(
+            UserModel user, CredentialModel credential, PushCredentialData credentialData, String clientId) {}
 
     public DeviceAssertion authenticate(HttpHeaders headers, UriInfo uriInfo, String httpMethod) {
         AuthContext ctx = new AuthContext(httpMethod, uriInfo.getPath());
@@ -82,6 +84,7 @@ public class DpopAuthenticator {
         try {
             String accessTokenString = requireAccessToken(headers);
             AccessToken accessToken = authenticateAccessToken(accessTokenString);
+            ctx.clientId = extractClientId(accessToken);
             String proof = requireDpopProof(headers);
             TokenLogHelper.logJwt("dpop-proof", proof);
 
@@ -184,7 +187,7 @@ public class DpopAuthenticator {
                 throw new ForbiddenException("DPoP proof replay detected");
             }
 
-            return new DeviceAssertion(user, credential, credentialData);
+            return new DeviceAssertion(user, credential, credentialData, ctx.clientId);
         } catch (BadRequestException | ForbiddenException | NotAuthorizedException | NotFoundException ex) {
             fireAuthFailedEvent(ctx, ex.getMessage());
             throw ex;
@@ -196,6 +199,7 @@ public class DpopAuthenticator {
         final String httpMethod;
         final String requestPath;
         String userId;
+        String clientId;
         String deviceCredentialId;
 
         AuthContext(String httpMethod, String requestPath) {
@@ -211,6 +215,7 @@ public class DpopAuthenticator {
                         realm().getId(),
                         ctx.userId,
                         ctx.deviceCredentialId,
+                        ctx.clientId,
                         reason,
                         ctx.httpMethod,
                         ctx.requestPath,
@@ -295,6 +300,11 @@ public class DpopAuthenticator {
             throw new NotFoundException("User not found");
         }
         return user;
+    }
+
+    private static String extractClientId(AccessToken token) {
+        Object clientId = token.getOtherClaims().get(OAuth2Constants.CLIENT_ID);
+        return clientId instanceof String s ? s : token.getIssuedFor();
     }
 
     private static String jsonText(JsonNode node, String field) {

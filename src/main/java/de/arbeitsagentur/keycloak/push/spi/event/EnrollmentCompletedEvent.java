@@ -25,6 +25,7 @@ import java.time.Instant;
  * @param userId       User who completed enrollment
  * @param challengeId  Enrollment challenge ID that was completed
  * @param deviceCredentialId Newly created credential ID
+ * @param clientId     OAuth client ID (null for enrollment challenges)
  * @param deviceId     Device identifier
  * @param deviceType   Type/OS of the device (e.g., "iOS", "Android")
  * @param timestamp    When this event occurred
@@ -34,6 +35,7 @@ public record EnrollmentCompletedEvent(
         String userId,
         String challengeId,
         String deviceCredentialId,
+        String clientId,
         String deviceId,
         String deviceType,
         Instant timestamp)

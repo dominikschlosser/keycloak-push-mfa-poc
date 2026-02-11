@@ -54,17 +54,17 @@ The extension provides an event SPI that allows you to react to push MFA lifecyc
 
 | Event | When Fired | Key Data |
 |-------|------------|----------|
-| `ChallengeCreatedEvent` | New authentication or enrollment challenge issued | `challengeId`, `challengeType`, `userId`, `clientId`, `userVerificationMode` |
-| `ChallengeAcceptedEvent` | User approved the challenge on their device | `challengeId`, `challengeType`, `userId`, `deviceId` |
-| `ChallengeDeniedEvent` | User denied the challenge on their device | `challengeId`, `challengeType`, `userId`, `deviceId` |
-| `ChallengeResponseInvalidEvent` | Response validation failed (bad signature, wrong PIN, etc.) | `challengeId`, `userId`, `reason` |
-| `EnrollmentCompletedEvent` | Device enrollment finished successfully | `challengeId`, `userId`, `deviceCredentialId`, `deviceId`, `deviceType` |
-| `KeyRotatedEvent` | Device key was successfully rotated | `userId`, `deviceCredentialId`, `deviceId` |
-| `KeyRotationDeniedEvent` | Key rotation request failed validation | `userId`, `deviceCredentialId`, `reason` |
-| `DpopAuthenticationFailedEvent` | DPoP authentication failed for device API request | `userId`, `deviceCredentialId`, `reason`, `httpMethod`, `requestPath` |
-| `UserLockedOutEvent` | Device requested user account lockout | `userId`, `deviceCredentialId`, `deviceId` |
+| `ChallengeCreatedEvent` | New authentication or enrollment challenge issued | `challengeId`, `challengeType`, `clientId`, `userVerificationMode` |
+| `ChallengeAcceptedEvent` | User approved the challenge on their device | `challengeId`, `challengeType`, `clientId`, `deviceId` |
+| `ChallengeDeniedEvent` | User denied the challenge on their device | `challengeId`, `challengeType`, `clientId`, `deviceId` |
+| `ChallengeResponseInvalidEvent` | Response validation failed (bad signature, wrong PIN, etc.) | `challengeId`, `clientId`, `reason` |
+| `EnrollmentCompletedEvent` | Device enrollment finished successfully | `challengeId`, `clientId`, `deviceCredentialId`, `deviceId`, `deviceType` |
+| `KeyRotatedEvent` | Device key was successfully rotated | `clientId`, `deviceCredentialId`, `deviceId` |
+| `KeyRotationDeniedEvent` | Key rotation request failed validation | `clientId`, `deviceCredentialId`, `reason` |
+| `DpopAuthenticationFailedEvent` | DPoP authentication failed for device API request | `clientId`, `deviceCredentialId`, `reason`, `httpMethod`, `requestPath` |
+| `UserLockedOutEvent` | Device requested user account lockout | `clientId`, `deviceCredentialId`, `deviceId` |
 
-All events include `realmId`, `userId` (may be null for early auth failures), and `timestamp`.
+All events include `realmId`, `userId` (may be null for early auth failures), `clientId`, and `timestamp`. The source of `clientId` depends on the event: for `ChallengeCreatedEvent` and `EnrollmentCompletedEvent` it is the OAuth client that initiated the flow; for challenge response events (`ChallengeAcceptedEvent`, `ChallengeDeniedEvent`, `ChallengeResponseInvalidEvent`) and device API events (`KeyRotatedEvent`, `KeyRotationDeniedEvent`, `DpopAuthenticationFailedEvent`, `UserLockedOutEvent`) it is the OAuth client from the device's DPoP access token. It may be null for early DPoP auth failures or enrollment challenges without a client context.
 
 ### Built-in Listeners
 

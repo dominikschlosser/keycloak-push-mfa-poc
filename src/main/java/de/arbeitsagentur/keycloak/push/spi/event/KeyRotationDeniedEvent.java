@@ -32,11 +32,12 @@ import java.time.Instant;
  * @param realmId      Realm where the rotation was attempted
  * @param userId       User who attempted key rotation
  * @param deviceCredentialId Credential for which rotation was attempted
+ * @param clientId     OAuth client ID from the access token
  * @param reason       Description of why the rotation was denied
  * @param timestamp    When this event occurred
  */
 public record KeyRotationDeniedEvent(
-        String realmId, String userId, String deviceCredentialId, String reason, Instant timestamp)
+        String realmId, String userId, String deviceCredentialId, String clientId, String reason, Instant timestamp)
         implements PushMfaEvent {
 
     @Override
