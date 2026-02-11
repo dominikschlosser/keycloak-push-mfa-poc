@@ -67,7 +67,7 @@ class PushMfaEventServiceTest {
 
     @Test
     void fireHandlesNullSession() {
-        KeyRotatedEvent event = new KeyRotatedEvent("r", "u", "c", "d", Instant.now());
+        KeyRotatedEvent event = new KeyRotatedEvent("r", "u", "c", "client-1", "d", Instant.now());
         assertDoesNotThrow(() -> PushMfaEventService.fire(null, event));
     }
 
@@ -130,27 +130,30 @@ class PushMfaEventServiceTest {
                         "u",
                         "c",
                         PushChallenge.Type.AUTHENTICATION,
-                        null,
-                        null,
-                        null,
+                        "cred",
+                        "client-1",
+                        PushChallenge.UserVerificationMode.NONE,
                         Instant.now(),
                         Instant.now()));
         PushMfaEventService.fire(
                 session,
                 new ChallengeAcceptedEvent(
-                        "r", "u", "c", PushChallenge.Type.AUTHENTICATION, null, null, null, Instant.now()));
+                        "r", "u", "c", PushChallenge.Type.AUTHENTICATION, "cred", "client-1", "dev", Instant.now()));
         PushMfaEventService.fire(
                 session,
                 new ChallengeDeniedEvent(
-                        "r", "u", "c", PushChallenge.Type.AUTHENTICATION, null, null, null, Instant.now()));
+                        "r", "u", "c", PushChallenge.Type.AUTHENTICATION, "cred", "client-1", "dev", Instant.now()));
         PushMfaEventService.fire(
-                session, new ChallengeResponseInvalidEvent("r", "u", "c", null, "reason", Instant.now()));
+                session, new ChallengeResponseInvalidEvent("r", "u", "c", "cred", "client-1", "reason", Instant.now()));
         PushMfaEventService.fire(
-                session, new EnrollmentCompletedEvent("r", "u", "c", "cred", "dev", "ios", Instant.now()));
-        PushMfaEventService.fire(session, new KeyRotatedEvent("r", "u", "cred", "dev", Instant.now()));
-        PushMfaEventService.fire(session, new KeyRotationDeniedEvent("r", "u", "cred", "reason", Instant.now()));
+                session, new EnrollmentCompletedEvent("r", "u", "c", "cred", "client-1", "dev", "ios", Instant.now()));
+        PushMfaEventService.fire(session, new KeyRotatedEvent("r", "u", "cred", "client-1", "dev", Instant.now()));
         PushMfaEventService.fire(
-                session, new DpopAuthenticationFailedEvent("r", "u", "cred", "reason", "POST", "/path", Instant.now()));
+                session, new KeyRotationDeniedEvent("r", "u", "cred", "client-1", "reason", Instant.now()));
+        PushMfaEventService.fire(
+                session,
+                new DpopAuthenticationFailedEvent(
+                        "r", "u", "cred", "client-1", "reason", "POST", "/path", Instant.now()));
 
         assertEquals(8, listener1.genericEvents.size());
         assertEquals(1, listener1.challengeCreatedEvents.size());

@@ -104,7 +104,7 @@ class KeycloakEventBridgeListener implements PushMfaEventListener {
         emit(
                 event.realmId(),
                 event.userId(),
-                null,
+                event.clientId(),
                 EventType.LOGIN_ERROR,
                 PushMfaEventDetails.ErrorCodes.INVALID_RESPONSE,
                 details);
@@ -120,7 +120,7 @@ class KeycloakEventBridgeListener implements PushMfaEventListener {
                 .add(PushMfaEventDetails.DEVICE_ID, event.deviceId())
                 .add(PushMfaEventDetails.DEVICE_TYPE, event.deviceType());
 
-        emit(event.realmId(), event.userId(), null, EventType.UPDATE_CREDENTIAL, null, details);
+        emit(event.realmId(), event.userId(), event.clientId(), EventType.UPDATE_CREDENTIAL, null, details);
     }
 
     @Override
@@ -131,7 +131,7 @@ class KeycloakEventBridgeListener implements PushMfaEventListener {
                 .add(PushMfaEventDetails.DEVICE_CREDENTIAL_ID, event.deviceCredentialId())
                 .add(PushMfaEventDetails.DEVICE_ID, event.deviceId());
 
-        emit(event.realmId(), event.userId(), null, EventType.UPDATE_CREDENTIAL, null, details);
+        emit(event.realmId(), event.userId(), event.clientId(), EventType.UPDATE_CREDENTIAL, null, details);
     }
 
     @Override
@@ -145,7 +145,7 @@ class KeycloakEventBridgeListener implements PushMfaEventListener {
         emit(
                 event.realmId(),
                 event.userId(),
-                null,
+                event.clientId(),
                 EventType.UPDATE_CREDENTIAL_ERROR,
                 PushMfaEventDetails.ErrorCodes.KEY_ROTATION_DENIED,
                 details);
@@ -161,7 +161,7 @@ class KeycloakEventBridgeListener implements PushMfaEventListener {
         emit(
                 event.realmId(),
                 event.userId(),
-                null,
+                event.clientId(),
                 EventType.LOGIN_ERROR,
                 PushMfaEventDetails.ErrorCodes.USER_LOCKED_OUT,
                 details);
@@ -179,7 +179,7 @@ class KeycloakEventBridgeListener implements PushMfaEventListener {
         emit(
                 event.realmId(),
                 event.userId(),
-                null,
+                event.clientId(),
                 EventType.LOGIN_ERROR,
                 PushMfaEventDetails.ErrorCodes.DPOP_AUTH_FAILED,
                 details);

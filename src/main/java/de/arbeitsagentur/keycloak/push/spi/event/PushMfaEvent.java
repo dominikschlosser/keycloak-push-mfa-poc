@@ -44,6 +44,11 @@ public sealed interface PushMfaEvent
     /** User ID associated with the event. */
     String userId();
 
+    /** OAuth client ID that initiated the event, or {@code null} if not applicable. */
+    default String clientId() {
+        return null;
+    }
+
     /** Timestamp when the event occurred. */
     Instant timestamp();
 }

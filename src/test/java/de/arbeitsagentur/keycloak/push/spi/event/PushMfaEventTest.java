@@ -111,10 +111,11 @@ class PushMfaEventTest {
     @Test
     void challengeResponseInvalidEventHasCorrectType() {
         String reason = "Invalid signature";
-        ChallengeResponseInvalidEvent event =
-                new ChallengeResponseInvalidEvent(REALM_ID, USER_ID, CHALLENGE_ID, CREDENTIAL_ID, reason, TIMESTAMP);
+        ChallengeResponseInvalidEvent event = new ChallengeResponseInvalidEvent(
+                REALM_ID, USER_ID, CHALLENGE_ID, CREDENTIAL_ID, CLIENT_ID, reason, TIMESTAMP);
 
         assertEquals(EventTypes.CHALLENGE_RESPONSE_INVALID, event.eventType());
+        assertEquals(CLIENT_ID, event.clientId());
         assertEquals(reason, event.reason());
     }
 
@@ -122,25 +123,29 @@ class PushMfaEventTest {
     void enrollmentCompletedEventHasCorrectType() {
         String deviceType = "iOS";
         EnrollmentCompletedEvent event = new EnrollmentCompletedEvent(
-                REALM_ID, USER_ID, CHALLENGE_ID, CREDENTIAL_ID, DEVICE_ID, deviceType, TIMESTAMP);
+                REALM_ID, USER_ID, CHALLENGE_ID, CREDENTIAL_ID, CLIENT_ID, DEVICE_ID, deviceType, TIMESTAMP);
 
         assertEquals(EventTypes.ENROLLMENT_COMPLETED, event.eventType());
+        assertEquals(CLIENT_ID, event.clientId());
         assertEquals(deviceType, event.deviceType());
     }
 
     @Test
     void keyRotatedEventHasCorrectType() {
-        KeyRotatedEvent event = new KeyRotatedEvent(REALM_ID, USER_ID, CREDENTIAL_ID, DEVICE_ID, TIMESTAMP);
+        KeyRotatedEvent event = new KeyRotatedEvent(REALM_ID, USER_ID, CREDENTIAL_ID, CLIENT_ID, DEVICE_ID, TIMESTAMP);
 
         assertEquals(EventTypes.KEY_ROTATED, event.eventType());
+        assertEquals(CLIENT_ID, event.clientId());
     }
 
     @Test
     void keyRotationDeniedEventHasCorrectType() {
         String reason = "Invalid public key format";
-        KeyRotationDeniedEvent event = new KeyRotationDeniedEvent(REALM_ID, USER_ID, CREDENTIAL_ID, reason, TIMESTAMP);
+        KeyRotationDeniedEvent event =
+                new KeyRotationDeniedEvent(REALM_ID, USER_ID, CREDENTIAL_ID, CLIENT_ID, reason, TIMESTAMP);
 
         assertEquals(EventTypes.KEY_ROTATION_DENIED, event.eventType());
+        assertEquals(CLIENT_ID, event.clientId());
         assertEquals(reason, event.reason());
     }
 
@@ -150,9 +155,10 @@ class PushMfaEventTest {
         String httpMethod = "POST";
         String requestPath = "/realms/test/push-mfa/login/pending";
         DpopAuthenticationFailedEvent event = new DpopAuthenticationFailedEvent(
-                REALM_ID, USER_ID, CREDENTIAL_ID, reason, httpMethod, requestPath, TIMESTAMP);
+                REALM_ID, USER_ID, CREDENTIAL_ID, CLIENT_ID, reason, httpMethod, requestPath, TIMESTAMP);
 
         assertEquals(EventTypes.DPOP_AUTHENTICATION_FAILED, event.eventType());
+        assertEquals(CLIENT_ID, event.clientId());
         assertEquals(reason, event.reason());
         assertEquals(httpMethod, event.httpMethod());
         assertEquals(requestPath, event.requestPath());
@@ -160,12 +166,14 @@ class PushMfaEventTest {
 
     @Test
     void userLockedOutEventHasCorrectType() {
-        UserLockedOutEvent event = new UserLockedOutEvent(REALM_ID, USER_ID, CREDENTIAL_ID, DEVICE_ID, TIMESTAMP);
+        UserLockedOutEvent event =
+                new UserLockedOutEvent(REALM_ID, USER_ID, CREDENTIAL_ID, CLIENT_ID, DEVICE_ID, TIMESTAMP);
 
         assertEquals(EventTypes.USER_LOCKED_OUT, event.eventType());
         assertEquals(REALM_ID, event.realmId());
         assertEquals(USER_ID, event.userId());
         assertEquals(CREDENTIAL_ID, event.deviceCredentialId());
+        assertEquals(CLIENT_ID, event.clientId());
         assertEquals(DEVICE_ID, event.deviceId());
         assertEquals(TIMESTAMP, event.timestamp());
     }
@@ -173,10 +181,11 @@ class PushMfaEventTest {
     @Test
     void dpopAuthenticationFailedEventAllowsNullUserAndCredential() {
         DpopAuthenticationFailedEvent event = new DpopAuthenticationFailedEvent(
-                REALM_ID, null, null, "Invalid access token", "GET", "/path", TIMESTAMP);
+                REALM_ID, null, null, null, "Invalid access token", "GET", "/path", TIMESTAMP);
 
         assertNull(event.userId());
         assertNull(event.deviceCredentialId());
+        assertNull(event.clientId());
         assertEquals(REALM_ID, event.realmId());
     }
 
@@ -217,21 +226,38 @@ class PushMfaEventTest {
                     USER_ID,
                     CHALLENGE_ID,
                     PushChallenge.Type.AUTHENTICATION,
-                    null,
-                    null,
-                    null,
+                    CREDENTIAL_ID,
+                    CLIENT_ID,
+                    PushChallenge.UserVerificationMode.NONE,
                     EXPIRES_AT,
                     TIMESTAMP),
             new ChallengeAcceptedEvent(
-                    REALM_ID, USER_ID, CHALLENGE_ID, PushChallenge.Type.AUTHENTICATION, null, null, null, TIMESTAMP),
+                    REALM_ID,
+                    USER_ID,
+                    CHALLENGE_ID,
+                    PushChallenge.Type.AUTHENTICATION,
+                    CREDENTIAL_ID,
+                    CLIENT_ID,
+                    DEVICE_ID,
+                    TIMESTAMP),
             new ChallengeDeniedEvent(
-                    REALM_ID, USER_ID, CHALLENGE_ID, PushChallenge.Type.AUTHENTICATION, null, null, null, TIMESTAMP),
-            new ChallengeResponseInvalidEvent(REALM_ID, USER_ID, CHALLENGE_ID, null, "reason", TIMESTAMP),
-            new EnrollmentCompletedEvent(REALM_ID, USER_ID, CHALLENGE_ID, CREDENTIAL_ID, DEVICE_ID, "ios", TIMESTAMP),
-            new KeyRotatedEvent(REALM_ID, USER_ID, CREDENTIAL_ID, DEVICE_ID, TIMESTAMP),
-            new KeyRotationDeniedEvent(REALM_ID, USER_ID, CREDENTIAL_ID, "reason", TIMESTAMP),
-            new DpopAuthenticationFailedEvent(REALM_ID, USER_ID, CREDENTIAL_ID, "reason", "POST", "/path", TIMESTAMP),
-            new UserLockedOutEvent(REALM_ID, USER_ID, CREDENTIAL_ID, DEVICE_ID, TIMESTAMP)
+                    REALM_ID,
+                    USER_ID,
+                    CHALLENGE_ID,
+                    PushChallenge.Type.AUTHENTICATION,
+                    CREDENTIAL_ID,
+                    CLIENT_ID,
+                    DEVICE_ID,
+                    TIMESTAMP),
+            new ChallengeResponseInvalidEvent(
+                    REALM_ID, USER_ID, CHALLENGE_ID, CREDENTIAL_ID, CLIENT_ID, "reason", TIMESTAMP),
+            new EnrollmentCompletedEvent(
+                    REALM_ID, USER_ID, CHALLENGE_ID, CREDENTIAL_ID, CLIENT_ID, DEVICE_ID, "ios", TIMESTAMP),
+            new KeyRotatedEvent(REALM_ID, USER_ID, CREDENTIAL_ID, CLIENT_ID, DEVICE_ID, TIMESTAMP),
+            new KeyRotationDeniedEvent(REALM_ID, USER_ID, CREDENTIAL_ID, CLIENT_ID, "reason", TIMESTAMP),
+            new DpopAuthenticationFailedEvent(
+                    REALM_ID, USER_ID, CREDENTIAL_ID, CLIENT_ID, "reason", "POST", "/path", TIMESTAMP),
+            new UserLockedOutEvent(REALM_ID, USER_ID, CREDENTIAL_ID, CLIENT_ID, DEVICE_ID, TIMESTAMP)
         };
 
         for (PushMfaEvent event : events) {

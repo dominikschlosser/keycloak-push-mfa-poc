@@ -27,7 +27,7 @@ import java.time.Instant;
  * @param challengeId   Unique identifier of the challenge
  * @param challengeType Type of challenge (AUTHENTICATION or ENROLLMENT)
  * @param deviceCredentialId  Credential ID associated with the challenge
- * @param clientId      OAuth client ID
+ * @param clientId      OAuth client ID from the responding device's access token
  * @param deviceId      Device that denied the challenge
  * @param timestamp     When this event occurred
  */

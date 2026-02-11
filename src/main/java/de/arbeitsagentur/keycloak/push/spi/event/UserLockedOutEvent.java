@@ -24,11 +24,12 @@ import java.time.Instant;
  * @param realmId            Realm where the lockout was requested
  * @param userId             User who was locked out
  * @param deviceCredentialId Credential ID of the device that requested lockout
+ * @param clientId           OAuth client ID from the access token
  * @param deviceId           Device that requested the lockout
  * @param timestamp          When this event occurred
  */
 public record UserLockedOutEvent(
-        String realmId, String userId, String deviceCredentialId, String deviceId, Instant timestamp)
+        String realmId, String userId, String deviceCredentialId, String clientId, String deviceId, Instant timestamp)
         implements PushMfaEvent {
 
     @Override
