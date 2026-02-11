@@ -21,6 +21,7 @@ import de.arbeitsagentur.keycloak.push.spi.PushMfaEventListenerFactory;
 import org.keycloak.Config;
 import org.keycloak.models.KeycloakSession;
 import org.keycloak.models.KeycloakSessionFactory;
+import org.keycloak.provider.EnvironmentDependentProviderFactory;
 
 /**
  * Factory for the {@link KeycloakEventBridgeListener}.
@@ -33,10 +34,18 @@ import org.keycloak.models.KeycloakSessionFactory;
  *   <li>Standard Keycloak EventListenerProviders</li>
  * </ul>
  *
- * <p>This listener is registered by default and works alongside other Push MFA event listeners.
- * Multiple listeners can be active simultaneously since the SPI supports multi-provider mode.
+ * <p>This listener is <strong>disabled by default</strong>. To enable it, set the following
+ * Keycloak configuration:
+ * <pre>{@code
+ * spi-push-mfa-event-listener--keycloak-event-bridge--enabled=true
+ * }</pre>
+ * or via environment variable:
+ * <pre>{@code
+ * KC_SPI_PUSH_MFA_EVENT_LISTENER__KEYCLOAK_EVENT_BRIDGE__ENABLED=true
+ * }</pre>
  */
-public class KeycloakEventBridgeListenerFactory implements PushMfaEventListenerFactory {
+public class KeycloakEventBridgeListenerFactory
+        implements PushMfaEventListenerFactory, EnvironmentDependentProviderFactory {
 
     public static final String ID = "keycloak-event-bridge";
 
@@ -63,5 +72,10 @@ public class KeycloakEventBridgeListenerFactory implements PushMfaEventListenerF
     @Override
     public String getId() {
         return ID;
+    }
+
+    @Override
+    public boolean isSupported(Config.Scope config) {
+        return config.getBoolean("enabled", false);
     }
 }
