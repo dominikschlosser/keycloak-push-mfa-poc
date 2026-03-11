@@ -224,6 +224,29 @@ class PushMfaIntegrationIT {
     }
 
     @Test
+    void enrollmentMakesCredentialVisibleToAdminApiSoonAfterCompletion() throws Exception {
+        for (int i = 0; i < 3; i++) {
+            adminClient.resetUserState(TEST_USERNAME);
+            DeviceState state = DeviceState.create(DeviceKeyType.RSA);
+            DeviceClient deviceClient = new DeviceClient(baseUri, state);
+            BrowserSession session = new BrowserSession(baseUri);
+
+            HtmlPage loginPage = session.startAuthorization("test-app");
+            HtmlPage enrollPage = session.submitLogin(loginPage, TEST_USERNAME, TEST_PASSWORD);
+            String enrollmentToken = session.extractEnrollmentToken(enrollPage);
+
+            deviceClient.completeEnrollment(enrollmentToken);
+
+            JsonNode credential = awaitPushCredential(subjectFromToken(enrollmentToken));
+            assertEquals(
+                    state.deviceCredentialId(), credential.path("credentialId").asText());
+            assertEquals(state.deviceId(), credential.path("deviceId").asText());
+
+            session.submitEnrollmentCheck(enrollPage);
+        }
+    }
+
+    @Test
     void loginSseRoutesStatusToMatchingChallengeOnly() throws Exception {
         adminClient.configurePushMfaMaxPendingChallenges(10);
         DeviceClient deviceClient = enrollDevice();
@@ -1237,6 +1260,27 @@ class PushMfaIntegrationIT {
         }
         JsonNode pending = deviceClient.fetchPendingChallenges();
         assertEquals(0, pending.size(), () -> "Expected pending challenges to expire but got: " + pending);
+    }
+
+    private JsonNode awaitPushCredential(String userId) throws Exception {
+        long deadline = System.currentTimeMillis() + 5000L;
+        RuntimeException lastFailure = null;
+        while (System.currentTimeMillis() < deadline) {
+            try {
+                return adminClient.fetchPushCredential(userId);
+            } catch (RuntimeException ex) {
+                lastFailure = ex;
+                Thread.sleep(100);
+            }
+        }
+        if (lastFailure != null) {
+            throw lastFailure;
+        }
+        throw new IllegalStateException("Push credential not visible for user " + userId);
+    }
+
+    private static String subjectFromToken(String token) throws Exception {
+        return SignedJWT.parse(token).getJWTClaimsSet().getSubject();
     }
 
     /**

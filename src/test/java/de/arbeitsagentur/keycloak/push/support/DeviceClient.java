@@ -240,17 +240,31 @@ public final class DeviceClient {
         if (accessToken != null) {
             return;
         }
-        HttpRequest request = HttpRequest.newBuilder(tokenEndpoint)
-                .header("DPoP", createDpopProof("POST", tokenEndpoint))
-                .header("Content-Type", "application/x-www-form-urlencoded")
-                .POST(HttpRequest.BodyPublishers.ofString("grant_type=client_credentials&client_id="
-                        + urlEncode(DEVICE_CLIENT_ID) + "&client_secret=" + urlEncode(DEVICE_CLIENT_SECRET)))
-                .build();
-        HttpResponse<String> response = http.send(request, HttpResponse.BodyHandlers.ofString());
+        long deadline = System.currentTimeMillis() + 5000L;
+        HttpResponse<String> lastResponse = null;
+        while (System.currentTimeMillis() < deadline) {
+            HttpRequest request = HttpRequest.newBuilder(tokenEndpoint)
+                    .header("DPoP", createDpopProof("POST", tokenEndpoint))
+                    .header("Content-Type", "application/x-www-form-urlencoded")
+                    .POST(HttpRequest.BodyPublishers.ofString("grant_type=client_credentials&client_id="
+                            + urlEncode(DEVICE_CLIENT_ID) + "&client_secret=" + urlEncode(DEVICE_CLIENT_SECRET)))
+                    .build();
+            HttpResponse<String> response = http.send(request, HttpResponse.BodyHandlers.ofString());
+            lastResponse = response;
+            if (response.statusCode() == 200) {
+                JsonNode json = MAPPER.readTree(response.body());
+                accessToken = json.path("access_token").asText();
+                assertNotNull(accessToken);
+                return;
+            }
+            if (response.statusCode() != 400 || !response.body().contains("\"unauthorized_client\"")) {
+                break;
+            }
+            Thread.sleep(100);
+        }
+        HttpResponse<String> response = lastResponse;
+        assertNotNull(response, "Token request did not produce a response");
         assertEquals(200, response.statusCode(), () -> "Token request failed: " + response.body());
-        JsonNode json = MAPPER.readTree(response.body());
-        accessToken = json.path("access_token").asText();
-        assertNotNull(accessToken);
     }
 
     private String createDpopProof(String method, URI uri) throws Exception {

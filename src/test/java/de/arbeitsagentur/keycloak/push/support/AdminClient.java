@@ -719,6 +719,59 @@ public final class AdminClient {
             }
         }
 
+        waitForPushMfaAuthenticatorConfig(updates);
         clearRealmCaches();
+        Thread.sleep(100);
+    }
+
+    private void waitForPushMfaAuthenticatorConfig(Map<String, String> expectedUpdates) throws Exception {
+        if (expectedUpdates == null || expectedUpdates.isEmpty()) {
+            return;
+        }
+
+        for (int attempt = 0; attempt < 10; attempt++) {
+            JsonNode execution = findExecution(PUSH_FLOW_ALIAS, PUSH_AUTHENTICATOR_ID);
+            if (execution == null) {
+                throw new IllegalStateException(
+                        "Push MFA authenticator execution not found in flow " + PUSH_FLOW_ALIAS);
+            }
+
+            String configId = execution.path("authenticationConfig").asText(null);
+            if (configId == null || configId.isBlank()) {
+                configId = execution.path("authenticatorConfig").asText(null);
+            }
+            if (configId != null && configId.isBlank()) {
+                configId = null;
+            }
+            if (configId == null) {
+                Thread.sleep(100L * (attempt + 1));
+                continue;
+            }
+
+            URI configUri = baseUri.resolve("/admin/realms/demo/authentication/config/" + configId);
+            HttpResponse<String> response = sendGetWithRetry(configUri);
+            if (response.statusCode() != 200) {
+                Thread.sleep(100L * (attempt + 1));
+                continue;
+            }
+
+            JsonNode config = MAPPER.readTree(response.body()).path("config");
+            boolean matches = true;
+            for (Map.Entry<String, String> entry : expectedUpdates.entrySet()) {
+                String actual = config.path(entry.getKey()).asText(null);
+                if (!java.util.Objects.equals(actual, entry.getValue())) {
+                    matches = false;
+                    break;
+                }
+            }
+            if (matches) {
+                return;
+            }
+
+            Thread.sleep(100L * (attempt + 1));
+        }
+
+        throw new IllegalStateException(
+                "Timed out waiting for Push MFA authenticator config update: " + expectedUpdates);
     }
 }
