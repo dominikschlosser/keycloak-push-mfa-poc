@@ -786,8 +786,9 @@ public class PushMfaResource {
             return null;
         }
         return switch (challenge.getUserVerificationMode()) {
-            case NUMBER_MATCH -> new UserVerificationInfo(
-                    PushMfaConstants.USER_VERIFICATION_NUMBER_MATCH, challenge.getUserVerificationOptions(), null);
+            case NUMBER_MATCH ->
+                new UserVerificationInfo(
+                        PushMfaConstants.USER_VERIFICATION_NUMBER_MATCH, challenge.getUserVerificationOptions(), null);
             case PIN -> {
                 String expected = challenge.getUserVerificationValue();
                 int pinLength = (!StringUtil.isBlank(expected) && expected.length() > 0)
@@ -885,5 +886,6 @@ public class PushMfaResource {
             @JsonProperty("pushProviderId") String pushProviderId,
             @JsonProperty("pushProviderType") String pushProviderType) {}
 
-    record RotateDeviceKeyRequest(@JsonProperty("publicKeyJwk") JsonNode publicKeyJwk) {}
+    record RotateDeviceKeyRequest(
+            @JsonProperty("publicKeyJwk") JsonNode publicKeyJwk) {}
 }
