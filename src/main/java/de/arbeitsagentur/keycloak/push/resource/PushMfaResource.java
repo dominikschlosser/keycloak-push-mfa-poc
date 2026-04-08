@@ -41,6 +41,8 @@ import de.arbeitsagentur.keycloak.push.util.PushMfaKeyUtil;
 import de.arbeitsagentur.keycloak.push.util.PushMfaStringUtil;
 import de.arbeitsagentur.keycloak.push.util.PushSignatureVerifier;
 import de.arbeitsagentur.keycloak.push.util.TokenLogHelper;
+import io.smallrye.common.annotation.RunOnVirtualThread;
+import jakarta.transaction.Transactional;
 import jakarta.ws.rs.BadRequestException;
 import jakarta.ws.rs.ClientErrorException;
 import jakarta.ws.rs.Consumes;
@@ -57,19 +59,17 @@ import jakarta.ws.rs.core.Context;
 import jakarta.ws.rs.core.HttpHeaders;
 import jakarta.ws.rs.core.MediaType;
 import jakarta.ws.rs.core.Response;
+import jakarta.ws.rs.core.StreamingOutput;
 import jakarta.ws.rs.core.UriInfo;
-import jakarta.ws.rs.sse.Sse;
-import jakarta.ws.rs.sse.SseEventSink;
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
-import java.util.concurrent.ExecutorService;
+import java.util.concurrent.TimeUnit;
 import org.jboss.logging.Logger;
 import org.keycloak.credential.CredentialModel;
 import org.keycloak.crypto.KeyWrapper;
-import org.keycloak.executors.ExecutorsProvider;
 import org.keycloak.jose.jws.Algorithm;
 import org.keycloak.jose.jws.JWSInput;
 import org.keycloak.models.*;
@@ -84,7 +84,8 @@ public class PushMfaResource {
     private static final String ENROLLMENT_REQUEST_NOT_FOUND_MESSAGE = "Enrollment request not found";
     private static final Logger LOG = Logger.getLogger(PushMfaResource.class);
     private static final PushMfaConfig CONFIG = PushMfaConfig.load();
-    private static final long SSE_RETRY_AFTER_MILLIS = 5000L;
+    private static final int CHALLENGE_LOOKUP_ATTEMPTS = 5;
+    private static final long CHALLENGE_LOOKUP_RETRY_MILLIS = 50L;
     private static volatile PushMfaSseRegistry sseRegistry;
 
     private final KeycloakSession session;
@@ -102,19 +103,15 @@ public class PushMfaResource {
     @GET
     @Path("enroll/challenges/{challengeId}/events")
     @Produces(MediaType.SERVER_SENT_EVENTS)
-    public void streamEnrollmentEvents(
-            @PathParam("challengeId") String challengeId,
-            @QueryParam("secret") String secret,
-            @Context SseEventSink sink,
-            @Context Sse sse) {
-        if (sink == null || sse == null) {
-            return;
-        }
+    @Transactional(Transactional.TxType.NOT_SUPPORTED)
+    @RunOnVirtualThread
+    public Response streamEnrollmentEvents(
+            @PathParam("challengeId") String challengeId, @QueryParam("secret") String secret) {
         String cid = PushMfaInputValidator.requireUuid(challengeId, "challengeId");
         String sec =
                 PushMfaInputValidator.optionalBoundedText(secret, CONFIG.sse().maxSecretLength(), "secret");
         LOG.debugf("Received enrollment SSE stream request for challenge %s", cid);
-        submitChallengeStream(cid, sec, sink, sse, SseEventEmitter.EventType.ENROLLMENT, null);
+        return buildEnrollmentChallengeStreamResponse(cid, sec);
     }
 
     @GET
@@ -151,8 +148,7 @@ public class PushMfaResource {
         UserModel user = getUser(userId);
 
         String enrollmentId = PushMfaInputValidator.requireUuid(jsonText(payload, "enrollmentId"), "enrollmentId");
-        PushChallenge challenge =
-                challengeStore.get(enrollmentId).orElseThrow(() -> new NotFoundException("Challenge not found"));
+        PushChallenge challenge = getRequiredChallenge(enrollmentId);
 
         if (challenge.getType() != PushChallenge.Type.ENROLLMENT) {
             throw new BadRequestException("Challenge is not for enrollment");
@@ -297,8 +293,7 @@ public class PushMfaResource {
             throw new BadRequestException("Request body required");
         }
         String challengeId = PushMfaInputValidator.requireUuid(cid, "cid");
-        PushChallenge challenge =
-                challengeStore.get(challengeId).orElseThrow(() -> new NotFoundException("Challenge not found"));
+        PushChallenge challenge = getRequiredChallenge(challengeId);
 
         if (challenge.getType() != PushChallenge.Type.AUTHENTICATION) {
             throw new BadRequestException("Challenge is not for login");
@@ -365,7 +360,7 @@ public class PushMfaResource {
 
         if (PushMfaConstants.CHALLENGE_DENY.equals(tokenAction)) {
             PushChallengeStore.ResolveResult resolveResult =
-                    challengeStore.tryResolve(challengeId, PushChallengeStatus.DENIED);
+                    resolveChallengeWithRetry(challengeId, PushChallengeStatus.DENIED);
             PushChallenge resolved = requireResponseResolution(resolveResult, PushChallengeStatus.DENIED);
 
             PushMfaEventService.fire(
@@ -388,7 +383,7 @@ public class PushMfaResource {
 
         verifyUserVerification(session, challenge, payload, data.getDeviceCredentialId(), device.clientId());
         PushChallengeStore.ResolveResult resolveResult =
-                challengeStore.tryResolve(challengeId, PushChallengeStatus.APPROVED);
+                resolveChallengeWithRetry(challengeId, PushChallengeStatus.APPROVED);
         PushChallenge resolved = requireResponseResolution(resolveResult, PushChallengeStatus.APPROVED);
 
         PushMfaEventService.fire(
@@ -453,54 +448,126 @@ public class PushMfaResource {
     @GET
     @Path("login/challenges/{cid}/events")
     @Produces(MediaType.SERVER_SENT_EVENTS)
-    public void streamLoginChallengeEvents(
-            @PathParam("cid") String challengeId,
-            @QueryParam("secret") String secret,
-            @Context SseEventSink sink,
-            @Context Sse sse) {
-        if (sink == null || sse == null) {
-            return;
-        }
+    @Transactional(Transactional.TxType.NOT_SUPPORTED)
+    @RunOnVirtualThread
+    public Response streamLoginChallengeEvents(
+            @PathParam("cid") String challengeId, @QueryParam("secret") String secret) {
         String cid = PushMfaInputValidator.requireUuid(challengeId, "cid");
         String sec =
                 PushMfaInputValidator.optionalBoundedText(secret, CONFIG.sse().maxSecretLength(), "secret");
         LOG.debugf("Received login SSE stream request for challenge %s", cid);
-        submitChallengeStream(cid, sec, sink, sse, SseEventEmitter.EventType.LOGIN, PushChallenge.Type.AUTHENTICATION);
+        return buildLoginChallengeStreamResponse(cid, sec);
     }
 
-    private void submitChallengeStream(
-            String challengeId,
-            String secret,
-            SseEventSink sink,
-            Sse sse,
-            SseEventEmitter.EventType type,
-            PushChallenge.Type expectedType) {
+    private Response buildEnrollmentChallengeStreamResponse(String challengeId, String secret) {
+        return buildChallengeStreamResponse(
+                challengeId,
+                secret,
+                SseEventEmitter.EventType.ENROLLMENT,
+                registry -> registry.readEnrollmentChallenge(challengeId, secret));
+    }
+
+    private Response buildLoginChallengeStreamResponse(String challengeId, String secret) {
+        return buildChallengeStreamResponse(
+                challengeId,
+                secret,
+                SseEventEmitter.EventType.LOGIN,
+                registry -> registry.readAuthenticationChallenge(challengeId, secret));
+    }
+
+    private Response buildChallengeStreamResponse(
+            String challengeId, String secret, SseEventEmitter.EventType type, ChallengeStreamReader challengeReader) {
         PushMfaSseRegistry registry = getSseRegistry(session);
         if (StringUtil.isBlank(secret)) {
             LOG.warnf("%s SSE rejected for %s due to missing secret", type, challengeId);
-            closeAfterStatus(sink, sse, "INVALID", null, type, null);
-            return;
+            return singleStatusStreamResponse("INVALID", type);
         }
 
-        PushMfaSseRegistry.ChallengeReadResult readResult = registry.readChallenge(challengeId, secret, expectedType);
+        PushMfaSseRegistry.ChallengeReadResult readResult = challengeReader.read(registry);
         if (readResult.failureStatus() != null) {
-            closeAfterStatus(sink, sse, readResult.failureStatus(), null, type, null);
-            return;
+            return singleStatusStreamResponse(readResult.failureStatus(), type);
         }
 
         PushChallenge challenge = readResult.challenge();
-        boolean accepted = registry.register(challengeId, secret, sink, sse, type, expectedType, null);
-        if (!accepted) {
+        if (!registry.tryAcquireConnection()) {
             LOG.warnf("Rejecting %s SSE for %s due to maxConnections=%d", type, challengeId, registry.maxConnections());
-            closeAfterStatus(sink, sse, "TOO_MANY_CONNECTIONS", null, type, SSE_RETRY_AFTER_MILLIS);
-            return;
+            return retryStatusStreamResponse(
+                    "TOO_MANY_CONNECTIONS", challenge, type, CONFIG.sse().reconnectDelayMillis());
         }
 
-        if (sink.isClosed()) {
+        StreamingOutput stream = output -> {
             try {
-                sink.close();
-            } catch (Exception ignored) {
-                // no-op
+                streamChallengeEvents(registry, challengeId, challenge, output, type, challengeReader);
+            } finally {
+                registry.releaseConnection();
+            }
+        };
+        return sseResponse(stream);
+    }
+
+    private void streamChallengeEvents(
+            PushMfaSseRegistry registry,
+            String challengeId,
+            PushChallenge initialChallenge,
+            java.io.OutputStream output,
+            SseEventEmitter.EventType type,
+            ChallengeStreamReader challengeReader) {
+        PushChallengeStatus lastStatus = null;
+        long connectedAtMillis = System.currentTimeMillis();
+        long lastActivityMillis = connectedAtMillis;
+        PushChallenge currentChallenge = initialChallenge;
+
+        while (true) {
+            long now = System.currentTimeMillis();
+            if (now - connectedAtMillis >= registry.maxConnectionLifetimeMillis()) {
+                return;
+            }
+
+            PushMfaSseRegistry.ChallengeReadResult readResult = challengeReader.read(registry);
+            if (readResult.failureStatus() != null) {
+                String failureStatus = readResult.failureStatus();
+                if ("NOT_FOUND".equals(failureStatus) && lastStatus == PushChallengeStatus.PENDING) {
+                    failureStatus = PushChallengeStatus.EXPIRED.name();
+                }
+                try {
+                    sseEmitter.writeStatusEvent(output, failureStatus, currentChallenge, type);
+                } catch (java.io.IOException ioException) {
+                    LOG.debugf(ioException, "SSE stream for %s closed while sending terminal status", challengeId);
+                }
+                return;
+            }
+
+            currentChallenge = readResult.challenge();
+            PushChallengeStatus currentStatus = currentChallenge.getStatus();
+            if (lastStatus != currentStatus) {
+                try {
+                    sseEmitter.writeStatusEvent(output, currentStatus.name(), currentChallenge, type);
+                } catch (java.io.IOException ioException) {
+                    LOG.debugf(ioException, "SSE stream for %s closed while sending status", challengeId);
+                    return;
+                }
+                lastStatus = currentStatus;
+                lastActivityMillis = now;
+                if (currentStatus != PushChallengeStatus.PENDING) {
+                    return;
+                }
+            } else if (currentStatus != PushChallengeStatus.PENDING) {
+                return;
+            } else if (now - lastActivityMillis >= registry.heartbeatIntervalMillis()) {
+                try {
+                    sseEmitter.writeHeartbeat(output);
+                } catch (java.io.IOException ioException) {
+                    LOG.debugf(ioException, "SSE stream for %s closed while sending heartbeat", challengeId);
+                    return;
+                }
+                lastActivityMillis = now;
+            }
+
+            try {
+                TimeUnit.MILLISECONDS.sleep(250L);
+            } catch (InterruptedException ex) {
+                Thread.currentThread().interrupt();
+                return;
             }
         }
     }
@@ -518,47 +585,37 @@ public class PushMfaResource {
                         CONFIG.sse().maxConnections(),
                         CONFIG.sse().heartbeatIntervalSeconds() * 1000L,
                         CONFIG.sse().maxConnectionLifetimeSeconds() * 1000L,
-                        session.getKeycloakSessionFactory(),
-                        resolveManagedExecutor(session));
+                        session.getKeycloakSessionFactory());
                 sseRegistry = registry;
             }
             return registry;
         }
     }
 
-    private static ExecutorService resolveManagedExecutor(KeycloakSession session) {
-        try {
-            ExecutorsProvider executorsProvider = session.getProvider(ExecutorsProvider.class);
-            if (executorsProvider == null) {
-                return null;
-            }
-            ExecutorService executor = executorsProvider.getExecutor("push-mfa-sse");
-            if (executor != null) {
-                LOG.debug("Using Keycloak managed executor for push-mfa-sse streams");
-            }
-            return executor;
-        } catch (RuntimeException ex) {
-            LOG.debug("Falling back to dedicated SSE executor", ex);
-            return null;
-        }
+    private Response singleStatusStreamResponse(String status, SseEventEmitter.EventType type) {
+        StreamingOutput stream = output -> sseEmitter.writeStatusEvent(output, status, type);
+        return sseResponse(stream);
     }
 
-    private void closeAfterStatus(
-            SseEventSink sink,
-            Sse sse,
-            String status,
-            PushChallenge challenge,
-            SseEventEmitter.EventType type,
-            Long retryAfterMillis) {
-        sseEmitter
-                .sendStatusEvent(sink, sse, status, challenge, type, retryAfterMillis)
-                .whenComplete((ignored, ex) -> {
-                    try {
-                        sink.close();
-                    } catch (Exception closeEx) {
-                        // no-op
-                    }
-                });
+    private Response retryStatusStreamResponse(
+            String status, PushChallenge challenge, SseEventEmitter.EventType type, long retryAfterMillis) {
+        StreamingOutput stream =
+                output -> sseEmitter.writeRetryStatusEvent(output, status, challenge, type, retryAfterMillis);
+        return sseResponse(stream);
+    }
+
+    private Response sseResponse(StreamingOutput stream) {
+        return Response.ok(stream)
+                .type(MediaType.SERVER_SENT_EVENTS)
+                .header(HttpHeaders.CACHE_CONTROL, "no-store")
+                .header("Pragma", "no-cache")
+                .header("X-Accel-Buffering", "no")
+                .build();
+    }
+
+    @FunctionalInterface
+    private interface ChallengeStreamReader {
+        PushMfaSseRegistry.ChallengeReadResult read(PushMfaSseRegistry registry);
     }
 
     private PushChallenge requireResponseResolution(
@@ -737,6 +794,9 @@ public class PushMfaResource {
 
         PushChallenge challenge = challengeStore.get(requestEntry.challengeId()).orElse(null);
         if (challenge == null) {
+            challenge = findChallengeWithRetry(requestEntry.challengeId()).orElse(null);
+        }
+        if (challenge == null) {
             requestStore.remove(handle);
             throw new NotFoundException(ENROLLMENT_REQUEST_NOT_FOUND_MESSAGE);
         }
@@ -832,9 +892,49 @@ public class PushMfaResource {
         if (root != null) {
             return true;
         }
-        LOG.debugf("Cleaning up stale challenge %s because auth session %s is gone", challenge.getId(), rootSessionId);
-        challengeStore.remove(challenge.getId());
+        LOG.debugf(
+                "Skipping pending challenge %s because auth session %s is not active on this node",
+                challenge.getId(), rootSessionId);
         return false;
+    }
+
+    private PushChallenge getRequiredChallenge(String challengeId) {
+        return findChallengeWithRetry(challengeId).orElseThrow(() -> new NotFoundException("Challenge not found"));
+    }
+
+    private Optional<PushChallenge> findChallengeWithRetry(String challengeId) {
+        Optional<PushChallenge> challenge = challengeStore.get(challengeId);
+        for (int attempt = 1; challenge.isEmpty() && attempt < CHALLENGE_LOOKUP_ATTEMPTS; attempt++) {
+            if (!pauseForChallengeRetry()) {
+                break;
+            }
+            challenge = challengeStore.get(challengeId);
+        }
+        return challenge;
+    }
+
+    private PushChallengeStore.ResolveResult resolveChallengeWithRetry(String challengeId, PushChallengeStatus status) {
+        PushChallengeStore.ResolveResult resolveResult = challengeStore.tryResolve(challengeId, status);
+        for (int attempt = 1;
+                resolveResult.outcome() == PushChallengeStore.ResolveOutcome.NOT_FOUND
+                        && attempt < CHALLENGE_LOOKUP_ATTEMPTS;
+                attempt++) {
+            if (!pauseForChallengeRetry()) {
+                break;
+            }
+            resolveResult = challengeStore.tryResolve(challengeId, status);
+        }
+        return resolveResult;
+    }
+
+    private boolean pauseForChallengeRetry() {
+        try {
+            TimeUnit.MILLISECONDS.sleep(CHALLENGE_LOOKUP_RETRY_MILLIS);
+            return true;
+        } catch (InterruptedException interrupted) {
+            Thread.currentThread().interrupt();
+            return false;
+        }
     }
 
     private JWSInput parseJwt(String token, String description) {

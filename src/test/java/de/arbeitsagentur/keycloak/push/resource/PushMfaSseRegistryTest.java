@@ -16,84 +16,108 @@
 
 package de.arbeitsagentur.keycloak.push.resource;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
-import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.when;
 
 import de.arbeitsagentur.keycloak.push.challenge.PushChallenge;
 import de.arbeitsagentur.keycloak.push.challenge.PushChallengeStatus;
 import java.time.Instant;
 import java.util.List;
 import org.junit.jupiter.api.Test;
-import org.keycloak.models.KeycloakSession;
-import org.keycloak.models.RealmModel;
-import org.keycloak.models.RealmProvider;
-import org.keycloak.sessions.AuthenticationSessionProvider;
-import org.keycloak.sessions.RootAuthenticationSessionModel;
 
 class PushMfaSseRegistryTest {
 
-    private static final String REALM_ID = "realm-1";
-    private static final String ROOT_SESSION_ID = "root-session-1";
-
     @Test
-    void authenticationChallengeWithMissingRootSessionIsInactive() {
-        KeycloakSession session = mock(KeycloakSession.class);
-        RealmProvider realmProvider = mock(RealmProvider.class);
-        AuthenticationSessionProvider authSessions = mock(AuthenticationSessionProvider.class);
-        RealmModel realm = mock(RealmModel.class);
+    void connectionPermitsCanBeReleasedAndReused() {
+        PushMfaSseRegistry registry = registry(challengeReader(challenge(PushChallenge.Type.AUTHENTICATION)));
 
-        when(session.realms()).thenReturn(realmProvider);
-        when(session.authenticationSessions()).thenReturn(authSessions);
-        when(realmProvider.getRealm(REALM_ID)).thenReturn(realm);
-        when(authSessions.getRootAuthenticationSession(realm, ROOT_SESSION_ID)).thenReturn(null);
+        assertTrue(registry.tryAcquireConnection());
+        assertFalse(registry.tryAcquireConnection());
 
-        PushChallenge challenge = authenticationChallenge(ROOT_SESSION_ID);
+        registry.releaseConnection();
 
-        assertFalse(PushMfaSseRegistry.isAuthenticationSessionActive(session, challenge));
+        assertTrue(registry.tryAcquireConnection());
     }
 
     @Test
-    void authenticationChallengeWithExistingRootSessionIsActive() {
-        KeycloakSession session = mock(KeycloakSession.class);
-        RealmProvider realmProvider = mock(RealmProvider.class);
-        AuthenticationSessionProvider authSessions = mock(AuthenticationSessionProvider.class);
-        RealmModel realm = mock(RealmModel.class);
-        RootAuthenticationSessionModel rootSession = mock(RootAuthenticationSessionModel.class);
+    void authenticationReadsRejectNonAuthenticationChallenges() {
+        PushMfaSseRegistry registry = registry(challengeReader(challenge(PushChallenge.Type.ENROLLMENT)));
 
-        when(session.realms()).thenReturn(realmProvider);
-        when(session.authenticationSessions()).thenReturn(authSessions);
-        when(realmProvider.getRealm(REALM_ID)).thenReturn(realm);
-        when(authSessions.getRootAuthenticationSession(realm, ROOT_SESSION_ID)).thenReturn(rootSession);
+        PushMfaSseRegistry.ChallengeReadResult result =
+                registry.readAuthenticationChallenge("challenge-1", "watch-secret");
 
-        PushChallenge challenge = authenticationChallenge(ROOT_SESSION_ID);
-
-        assertTrue(PushMfaSseRegistry.isAuthenticationSessionActive(session, challenge));
+        assertNull(result.challenge());
+        assertEquals("BAD_TYPE", result.failureStatus());
     }
 
     @Test
-    void authenticationChallengeWithoutRootSessionIdStaysActive() {
-        KeycloakSession session = mock(KeycloakSession.class);
+    void enrollmentReadsAllowEnrollmentChallenges() {
+        PushMfaSseRegistry registry = registry(challengeReader(challenge(PushChallenge.Type.ENROLLMENT)));
 
-        PushChallenge challenge = authenticationChallenge(null);
+        PushMfaSseRegistry.ChallengeReadResult result = registry.readEnrollmentChallenge("challenge-1", "watch-secret");
 
-        assertTrue(PushMfaSseRegistry.isAuthenticationSessionActive(session, challenge));
+        assertEquals(PushChallenge.Type.ENROLLMENT, result.challenge().getType());
+        assertNull(result.failureStatus());
     }
 
-    private PushChallenge authenticationChallenge(String rootSessionId) {
+    @Test
+    void readsRejectWrongSecret() {
+        PushMfaSseRegistry registry = registry(challengeReader(challenge(PushChallenge.Type.AUTHENTICATION)));
+
+        PushMfaSseRegistry.ChallengeReadResult result =
+                registry.readAuthenticationChallenge("challenge-1", "wrong-secret");
+
+        assertNull(result.challenge());
+        assertEquals("FORBIDDEN", result.failureStatus());
+    }
+
+    private PushMfaSseRegistry registry(PushMfaSseRegistry.ChallengeReader challengeReader) {
+        return new PushMfaSseRegistry(1, 5000L, 60000L, challengeReader);
+    }
+
+    private PushMfaSseRegistry.ChallengeReader challengeReader(PushChallenge challenge) {
+        return new PushMfaSseRegistry.ChallengeReader() {
+            @Override
+            public PushMfaSseRegistry.ChallengeReadResult readEnrollmentChallenge(String challengeId, String secret) {
+                return read(challengeId, secret, false);
+            }
+
+            @Override
+            public PushMfaSseRegistry.ChallengeReadResult readAuthenticationChallenge(
+                    String challengeId, String secret) {
+                return read(challengeId, secret, true);
+            }
+
+            private PushMfaSseRegistry.ChallengeReadResult read(String challengeId, String secret, boolean authOnly) {
+                if (!challenge.getId().equals(challengeId)) {
+                    return PushMfaSseRegistry.ChallengeReadResult.failure("NOT_FOUND");
+                }
+                if (!challenge.getWatchSecret().equals(secret)) {
+                    return PushMfaSseRegistry.ChallengeReadResult.failure("FORBIDDEN");
+                }
+                if (authOnly && challenge.getType() != PushChallenge.Type.AUTHENTICATION) {
+                    return PushMfaSseRegistry.ChallengeReadResult.failure("BAD_TYPE");
+                }
+                return PushMfaSseRegistry.ChallengeReadResult.success(challenge);
+            }
+        };
+    }
+
+    private PushChallenge challenge(PushChallenge.Type type) {
         Instant now = Instant.now();
         return new PushChallenge(
                 "challenge-1",
-                REALM_ID,
+                "realm-1",
                 "user-1",
                 new byte[0],
                 "credential-1",
                 "client-1",
                 "watch-secret",
-                rootSessionId,
+                "root-session-1",
                 now.plusSeconds(60),
-                PushChallenge.Type.AUTHENTICATION,
+                type,
                 PushChallengeStatus.PENDING,
                 now,
                 null,
