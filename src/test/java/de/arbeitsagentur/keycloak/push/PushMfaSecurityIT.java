@@ -42,6 +42,7 @@ import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.time.Instant;
+import java.util.Arrays;
 import java.util.Base64;
 import java.util.Date;
 import java.util.Map;
@@ -615,7 +616,7 @@ class PushMfaSecurityIT {
 
         private double calculateMedian(long[] values) {
             long[] sorted = values.clone();
-            java.util.Arrays.sort(sorted);
+            Arrays.sort(sorted);
             int mid = sorted.length / 2;
             if (sorted.length % 2 == 0) {
                 return (sorted[mid - 1] + sorted[mid]) / 2.0;

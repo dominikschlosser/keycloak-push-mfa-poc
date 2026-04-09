@@ -33,6 +33,7 @@ import org.keycloak.credential.CredentialModel;
 import org.keycloak.crypto.KeyUse;
 import org.keycloak.forms.login.LoginFormsProvider;
 import org.keycloak.http.HttpRequest;
+import org.keycloak.jose.jws.Algorithm;
 import org.keycloak.models.ClientModel;
 import org.keycloak.models.KeyManager;
 import org.keycloak.models.KeycloakSession;
@@ -70,7 +71,7 @@ public final class FlowTestSupport {
                 .thenReturn(TestKeycloakSupport.rsaSigningKey("kid-1"));
         when(realm.getId()).thenReturn("realm-1");
         when(realm.getName()).thenReturn("demo");
-        when(realm.getDefaultSignatureAlgorithm()).thenReturn(org.keycloak.jose.jws.Algorithm.RS256.toString());
+        when(realm.getDefaultSignatureAlgorithm()).thenReturn(Algorithm.RS256.toString());
         when(user.getId()).thenReturn("user-1");
         when(user.getUsername()).thenReturn("demo-user");
         when(user.credentialManager()).thenReturn(credentialManager);

@@ -61,6 +61,20 @@ class SseEventEmitterTest {
     }
 
     @Test
+    void retryStatusEventCanCarryPendingStateForReconnect() throws Exception {
+        SseEventEmitter emitter = new SseEventEmitter();
+        ByteArrayOutputStream output = new ByteArrayOutputStream();
+
+        emitter.writeRetryStatusEvent(
+                output, "PENDING", challenge(PushChallengeStatus.PENDING), SseEventEmitter.EventType.LOGIN, 3000L);
+
+        String event = output.toString(StandardCharsets.UTF_8);
+        assertTrue(event.contains("retry: 3000"));
+        assertTrue(event.contains("\"status\":\"PENDING\""));
+        assertTrue(event.contains("\"retryAfterMillis\":3000"));
+    }
+
+    @Test
     void heartbeatUsesSseCommentFormat() throws Exception {
         SseEventEmitter emitter = new SseEventEmitter();
         ByteArrayOutputStream output = new ByteArrayOutputStream();

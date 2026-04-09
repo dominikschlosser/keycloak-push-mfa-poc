@@ -21,6 +21,7 @@ import de.arbeitsagentur.keycloak.push.challenge.PushChallengeStore;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.concurrent.Semaphore;
+import org.keycloak.models.KeycloakSession;
 import org.keycloak.models.KeycloakSessionFactory;
 import org.keycloak.models.utils.KeycloakModelUtils;
 
@@ -120,10 +121,7 @@ final class PushMfaSseRegistry {
     }
 
     private static ChallengeReadResult readChallenge(
-            org.keycloak.models.KeycloakSession session,
-            String challengeId,
-            String secret,
-            boolean authenticationOnly) {
+            KeycloakSession session, String challengeId, String secret, boolean authenticationOnly) {
         PushChallengeStore challengeStore = new PushChallengeStore(session);
         Optional<PushChallenge> challengeOpt = challengeStore.get(challengeId);
         if (challengeOpt.isEmpty()) {

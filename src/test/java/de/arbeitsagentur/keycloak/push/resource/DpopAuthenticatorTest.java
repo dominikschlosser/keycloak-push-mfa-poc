@@ -24,12 +24,14 @@ import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.nimbusds.jose.JOSEObjectType;
 import com.nimbusds.jose.JWSAlgorithm;
 import com.nimbusds.jose.JWSHeader;
 import com.nimbusds.jose.crypto.ECDSASigner;
 import com.nimbusds.jose.jwk.Curve;
 import com.nimbusds.jose.jwk.ECKey;
+import com.nimbusds.jose.jwk.JWK;
 import com.nimbusds.jose.jwk.KeyUse;
 import com.nimbusds.jose.jwk.gen.ECKeyGenerator;
 import com.nimbusds.jwt.JWTClaimsSet;
@@ -47,8 +49,10 @@ import jakarta.ws.rs.core.HttpHeaders;
 import jakarta.ws.rs.core.UriInfo;
 import java.net.URI;
 import java.time.Instant;
+import java.util.Collections;
 import java.util.Date;
 import java.util.HashSet;
+import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicReference;
@@ -916,13 +920,13 @@ class DpopAuthenticatorTest {
     }
 
     private String computeJwkThumbprint(String jwkJson) throws Exception {
-        com.nimbusds.jose.jwk.JWK jwk = com.nimbusds.jose.jwk.JWK.parse(jwkJson);
+        JWK jwk = JWK.parse(jwkJson);
         return jwk.computeThumbprint().toString();
     }
 
     private String toJson(PushCredentialData data) {
         try {
-            return new com.fasterxml.jackson.databind.ObjectMapper().writeValueAsString(data);
+            return new ObjectMapper().writeValueAsString(data);
         } catch (Exception e) {
             throw new RuntimeException(e);
         }
@@ -958,22 +962,22 @@ class DpopAuthenticatorTest {
         private final Set<String> usedKeys = new HashSet<>();
 
         @Override
-        public void put(String key, long lifespanSeconds, java.util.Map<String, String> value) {
+        public void put(String key, long lifespanSeconds, Map<String, String> value) {
             usedKeys.add(key);
         }
 
         @Override
-        public java.util.Map<String, String> get(String key) {
-            return usedKeys.contains(key) ? java.util.Collections.emptyMap() : null;
+        public Map<String, String> get(String key) {
+            return usedKeys.contains(key) ? Collections.emptyMap() : null;
         }
 
         @Override
-        public java.util.Map<String, String> remove(String key) {
-            return usedKeys.remove(key) ? java.util.Collections.emptyMap() : null;
+        public Map<String, String> remove(String key) {
+            return usedKeys.remove(key) ? Collections.emptyMap() : null;
         }
 
         @Override
-        public boolean replace(String key, java.util.Map<String, String> value) {
+        public boolean replace(String key, Map<String, String> value) {
             return usedKeys.contains(key);
         }
 

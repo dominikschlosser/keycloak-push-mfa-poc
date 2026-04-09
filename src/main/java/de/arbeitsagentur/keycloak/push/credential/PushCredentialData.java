@@ -18,6 +18,7 @@ package de.arbeitsagentur.keycloak.push.credential;
 
 import com.fasterxml.jackson.annotation.JsonCreator;
 import com.fasterxml.jackson.annotation.JsonProperty;
+import de.arbeitsagentur.keycloak.push.challenge.PushChallenge;
 import de.arbeitsagentur.keycloak.push.util.PushMfaConstants;
 import org.keycloak.utils.StringUtil;
 
@@ -32,7 +33,7 @@ import org.keycloak.utils.StringUtil;
  *   <li>{@code deviceCredentialId} (this class) - chosen by the device during enrollment and used
  *       in tokens, events, and push notifications. The mobile app uses this ID to match incoming
  *       push messages to its local credentials.</li>
- *   <li>{@code keycloakCredentialId} (on {@link de.arbeitsagentur.keycloak.push.challenge.PushChallenge})
+ *   <li>{@code keycloakCredentialId} (on {@link PushChallenge})
  *       - the UUID assigned by Keycloak's credential storage. Used internally to load the
  *       {@code CredentialModel} from the store. The server picks which credential to use for a
  *       challenge and stores this ID; the app never needs to know it.</li>
