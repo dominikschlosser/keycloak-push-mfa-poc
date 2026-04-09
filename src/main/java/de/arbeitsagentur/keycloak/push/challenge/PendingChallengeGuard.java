@@ -59,7 +59,10 @@ public class PendingChallengeGuard {
         boolean missingCredential = !credentialExistsPredicate.test(challenge);
         boolean sameOrUnknownRoot = isSameOrUnknownRoot(challenge, rootSessionId);
         boolean matchesAuthSession = authSessionChallengeId != null && authSessionChallengeId.equals(challenge.getId());
-        if (missingSession || missingCredential || sameOrUnknownRoot || matchesAuthSession) {
+        if (missingSession) {
+            return false;
+        }
+        if (missingCredential || sameOrUnknownRoot || matchesAuthSession) {
             challengeStore.remove(challenge.getId());
             return true;
         }

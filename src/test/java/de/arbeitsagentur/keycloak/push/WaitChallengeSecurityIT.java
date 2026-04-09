@@ -141,7 +141,7 @@ class WaitChallengeSecurityIT {
 
         @ParameterizedTest(name = "Unicode case: {0}")
         @DisplayName("Unicode edge cases in user ID should be handled safely")
-        @MethodSource("de.arbeitsagentur.keycloak.push.WaitChallengeSecurityIT#unicodeEdgeCases")
+        @MethodSource("unicodeEdgeCases")
         void unicodeEdgeCasesInUserIdHandledSafely(String description, String unicodeUserId) {
             // ATTACK: Unicode normalization attacks, homograph attacks, or encoding issues
             assertDoesNotThrow(() -> {
@@ -163,6 +163,10 @@ class WaitChallengeSecurityIT {
             Optional<WaitChallengeState> state = provider.get(VALID_REALM_ID, "", RESET_PERIOD);
             assertTrue(state.isPresent(), "State should be stored for empty user ID");
             assertEquals(1, state.get().consecutiveUnapproved(), "Counter should be incremented");
+        }
+
+        private static Stream<Arguments> unicodeEdgeCases() {
+            return WaitChallengeSecurityIT.unicodeEdgeCases();
         }
     }
 
@@ -248,12 +252,16 @@ class WaitChallengeSecurityIT {
 
         @ParameterizedTest(name = "Malicious realm ID: {0}")
         @DisplayName("Malicious realm IDs should be handled safely")
-        @MethodSource("de.arbeitsagentur.keycloak.push.WaitChallengeSecurityIT#maliciousRealmIds")
+        @MethodSource("maliciousRealmIds")
         void maliciousRealmIdsHandledSafely(String maliciousRealm) {
             assertDoesNotThrow(() -> {
                 provider.recordChallengeCreated(maliciousRealm, VALID_USER_ID, BASE_WAIT, MAX_WAIT, RESET_PERIOD);
                 provider.get(maliciousRealm, VALID_USER_ID, RESET_PERIOD);
             });
+        }
+
+        private static Stream<String> maliciousRealmIds() {
+            return WaitChallengeSecurityIT.maliciousRealmIds();
         }
     }
 

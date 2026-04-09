@@ -18,6 +18,7 @@ package de.arbeitsagentur.keycloak.push.support;
 
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
@@ -49,25 +50,25 @@ public final class TestKeycloakSupport {
             AuthenticationSessionModel authSession, Map<String, String> authNotes, Map<String, String> clientNotes) {
         when(authSession.getAuthNote(any())).thenAnswer(invocation -> authNotes.get(invocation.getArgument(0)));
         when(authSession.getClientNote(any())).thenAnswer(invocation -> clientNotes.get(invocation.getArgument(0)));
-        org.mockito.Mockito.doAnswer(invocation -> {
+        doAnswer(invocation -> {
                     authNotes.put(invocation.getArgument(0), invocation.getArgument(1));
                     return null;
                 })
                 .when(authSession)
                 .setAuthNote(any(), any());
-        org.mockito.Mockito.doAnswer(invocation -> {
+        doAnswer(invocation -> {
                     clientNotes.put(invocation.getArgument(0), invocation.getArgument(1));
                     return null;
                 })
                 .when(authSession)
                 .setClientNote(any(), any());
-        org.mockito.Mockito.doAnswer(invocation -> {
+        doAnswer(invocation -> {
                     authNotes.remove(invocation.getArgument(0));
                     return null;
                 })
                 .when(authSession)
                 .removeAuthNote(any());
-        org.mockito.Mockito.doAnswer(invocation -> {
+        doAnswer(invocation -> {
                     clientNotes.remove(invocation.getArgument(0));
                     return null;
                 })

@@ -32,6 +32,7 @@ import java.util.List;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.LinkedBlockingQueue;
+import java.util.concurrent.TimeUnit;
 
 public final class SseClient implements AutoCloseable {
 
@@ -53,13 +54,11 @@ public final class SseClient implements AutoCloseable {
     }
 
     public int awaitStatusCode(Duration timeout) throws Exception {
-        return responseFuture
-                .get(timeout.toMillis(), java.util.concurrent.TimeUnit.MILLISECONDS)
-                .statusCode();
+        return responseFuture.get(timeout.toMillis(), TimeUnit.MILLISECONDS).statusCode();
     }
 
     public String awaitStatus(Duration timeout) throws Exception {
-        return statuses.poll(timeout.toMillis(), java.util.concurrent.TimeUnit.MILLISECONDS);
+        return statuses.poll(timeout.toMillis(), TimeUnit.MILLISECONDS);
     }
 
     private void readEvents(InputStream stream) {

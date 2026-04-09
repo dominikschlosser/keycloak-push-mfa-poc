@@ -29,6 +29,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Random;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -1083,11 +1084,11 @@ class WaitChallengeFuzzIT {
      */
     private static final class ConcurrentSingleUseObjectProvider implements SingleUseObjectProvider {
 
-        private final Map<String, Map<String, String>> data = new java.util.concurrent.ConcurrentHashMap<>();
+        private final Map<String, Map<String, String>> data = new ConcurrentHashMap<>();
 
         @Override
         public synchronized void put(String key, long lifespanSeconds, Map<String, String> value) {
-            data.put(key, new java.util.concurrent.ConcurrentHashMap<>(value));
+            data.put(key, new ConcurrentHashMap<>(value));
         }
 
         @Override
@@ -1107,7 +1108,7 @@ class WaitChallengeFuzzIT {
             if (!data.containsKey(key)) {
                 return false;
             }
-            data.put(key, new java.util.concurrent.ConcurrentHashMap<>(value));
+            data.put(key, new ConcurrentHashMap<>(value));
             return true;
         }
 
@@ -1116,7 +1117,7 @@ class WaitChallengeFuzzIT {
             if (data.containsKey(key)) {
                 return false;
             }
-            data.put(key, new java.util.concurrent.ConcurrentHashMap<>());
+            data.put(key, new ConcurrentHashMap<>());
             return true;
         }
 

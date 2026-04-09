@@ -19,6 +19,7 @@ package de.arbeitsagentur.keycloak.push.challenge;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -32,7 +33,7 @@ class PendingChallengeGuardTest {
     private final Instant now = Instant.now();
 
     @Test
-    void removesStaleChallengesAndKeepsActive() {
+    void keepsChallengesWhenAuthSessionCannotBeFound() {
         PushChallengeStore store = mock(PushChallengeStore.class);
         PushChallenge active = challenge("active", "root-b");
         PushChallenge missingSession = challenge("missing-session", "root-c");
@@ -42,10 +43,11 @@ class PendingChallengeGuardTest {
         PendingChallengeGuard.PendingCheckResult result =
                 guard.cleanAndCount("realm", "user", "root-a", null, matches(active), alwaysTrue());
 
-        assertEquals(1, result.pending().size());
+        assertEquals(2, result.pending().size());
         assertEquals(active.getId(), result.pending().get(0).getId());
-        assertEquals(1, result.pendingCount());
-        verify(store).remove(missingSession.getId());
+        assertEquals(missingSession.getId(), result.pending().get(1).getId());
+        assertEquals(2, result.pendingCount());
+        verify(store, never()).remove(missingSession.getId());
     }
 
     @Test
