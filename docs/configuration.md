@@ -22,6 +22,7 @@ Configure these in the authentication flow execution settings.
 | `userVerificationPinLength` | `4` | PIN length when using `pin` verification (max: 12) |
 | `sameDeviceIncludeUserVerification` | `false` | Include verification answer in same-device deep links |
 | `loginAppUniversalLink` | `my-secure://confirm` | Deep link scheme for same-device login |
+| `autoAddRequiredAction` | `true` | Automatically add `push-mfa-register` when the user has no Push MFA credential |
 | `waitChallengeEnabled` | `false` | Enable exponential backoff rate limiting (see [Wait Challenge Rate Limiting](spi-reference.md#wait-challenge-rate-limiting)) |
 | `waitChallengeBaseSeconds` | `10` | Initial wait time after first unapproved challenge |
 | `waitChallengeMaxSeconds` | `3600` | Maximum wait time cap (1 hour) |

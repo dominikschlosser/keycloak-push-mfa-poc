@@ -1,6 +1,6 @@
 # API Reference
 
-All endpoints live under `/realms/<realm>/push-mfa`. Enrollment completion posts the device JWT in the request body, while every other endpoint requires a DPoP header signed with the user key (see [Flow Details](flow-details.md#dpop-authentication)). Access tokens still come from the device client credentials, but they are DPoP-bound so every request is cryptographically tied to the hardware key material.
+All endpoints live under `/realms/<realm>/push-mfa`. Enrollment completion posts the device JWT in the request body. The enrollment `request_uri` fetch endpoint is capability-URL based and does not use DPoP. The remaining device-facing endpoints require a DPoP header signed with the user key (see [Flow Details](flow-details.md#dpop-authentication)). Access tokens still come from the device client credentials, but they are DPoP-bound so every authenticated device request is cryptographically tied to the hardware key material.
 
 ## Fetch Enrollment Token By Reference
 
@@ -26,7 +26,7 @@ Content-Type: application/json
 
 Keycloak verifies the signature using `cnf.jwk`, persists the credential (JWK, deviceType, `pushProviderId`, `pushProviderType`, credentialId, deviceId, deviceLabel), and resolves the enrollment challenge. The `pushProviderId` value is whatever identifier your push backend requires (for example an FCM registration token or an APNs device token), while `pushProviderType` selects the Keycloak `PushNotificationSender` provider that should deliver the confirm token. The bundled logging implementation exposes the type `log`, which simply prints the payload. Your scripts use `pushProviderType=log` by default, but real deployments can plug in any provider via the [Push Notification SPI](spi-reference.md#push-notification-spi). The `deviceLabel` is read from the JWT payload (falls back to `PushMfaConstants.USER_CREDENTIAL_DISPLAY_NAME` when absent).
 
-If two completion requests race for the same enrollment challenge, the loser receives `409 Conflict` with `Challenge is currently being resolved` or `Challenge already resolved or expired`.
+If two completion requests race for the same enrollment challenge, the loser may receive `409 Conflict` with `Challenge is currently being resolved` or `400 Bad Request` with `Challenge already resolved or expired`, depending on whether the competing request is still in-flight or has already finished resolving the challenge.
 
 **Response:**
 ```json
