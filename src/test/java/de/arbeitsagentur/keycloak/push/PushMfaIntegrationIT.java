@@ -187,6 +187,21 @@ class PushMfaIntegrationIT {
     }
 
     @Test
+    void enrollmentAcceptsOptionalDpopBoundAccessToken() throws Exception {
+        adminClient.resetUserState(TEST_USERNAME);
+        DeviceState state = DeviceState.create(DeviceKeyType.RSA);
+        DeviceClient deviceClient = new DeviceClient(baseUri, state);
+        BrowserSession session = new BrowserSession(baseUri);
+
+        HtmlPage loginPage = session.startAuthorization("test-app");
+        HtmlPage enrollPage = session.submitLogin(loginPage, TEST_USERNAME, TEST_PASSWORD);
+        String token = session.extractEnrollmentToken(enrollPage);
+
+        deviceClient.completeEnrollmentWithDpop(token);
+        session.submitEnrollmentCheck(enrollPage);
+    }
+
+    @Test
     void enrollmentMakesCredentialVisibleToAdminApiSoonAfterCompletion() throws Exception {
         for (int i = 0; i < 3; i++) {
             adminClient.resetUserState(TEST_USERNAME);

@@ -20,7 +20,7 @@ import org.keycloak.Config;
 
 public record PushMfaConfig(Dpop dpop, Input input, Sse sse) {
 
-    public record Dpop(int jtiTtlSeconds, int jtiMaxLength, int iatToleranceSeconds) {}
+    public record Dpop(int jtiTtlSeconds, int jtiMaxLength, int iatToleranceSeconds, boolean requireForEnrollment) {}
 
     public record Input(
             int maxJwtLength,
@@ -54,7 +54,8 @@ public record PushMfaConfig(Dpop dpop, Input input, Sse sse) {
                 new Dpop(
                         boundedInt(dpop, keycloakDpop, "dpop", "jtiTtlSeconds", 300, 30, 3600),
                         boundedInt(dpop, keycloakDpop, "dpop", "jtiMaxLength", 128, 16, 512),
-                        boundedInt(dpop, keycloakDpop, "dpop", "iatToleranceSeconds", 120, 30, 600)),
+                        boundedInt(dpop, keycloakDpop, "dpop", "iatToleranceSeconds", 120, 30, 600),
+                        bool(dpop, keycloakDpop, "dpop", "requireForEnrollment", false)),
                 new Input(
                         boundedInt(input, keycloakInput, "input", "maxJwtLength", 16384, 2048, 131072),
                         boundedInt(input, keycloakInput, "input", "maxUserIdLength", 128, 32, 512),
@@ -97,6 +98,23 @@ public record PushMfaConfig(Dpop dpop, Input input, Sse sse) {
         return raw;
     }
 
+    private static boolean bool(
+            Config.Scope config, Config.Scope fallback, String group, String key, boolean defaultValue) {
+        String kebabKey = toKebabCase(key);
+        Boolean configured = readBoolean(config, key, kebabKey);
+        if (configured == null) {
+            configured = readBoolean(fallback, key, kebabKey);
+        }
+        if (configured == null) {
+            configured = readSystemBoolean(
+                    "keycloak.push-mfa." + group + "." + key,
+                    "keycloak.push-mfa." + group + "." + kebabKey,
+                    "push-mfa." + group + "." + key,
+                    "push-mfa." + group + "." + kebabKey);
+        }
+        return configured != null ? configured : defaultValue;
+    }
+
     private static Integer readInt(Config.Scope scope, String key, String kebabKey) {
         if (scope == null) {
             return null;
@@ -107,6 +125,20 @@ public record PushMfaConfig(Dpop dpop, Input input, Sse sse) {
         }
         if (!key.equals(kebabKey)) {
             return scope.getInt(kebabKey, null);
+        }
+        return null;
+    }
+
+    private static Boolean readBoolean(Config.Scope scope, String key, String kebabKey) {
+        if (scope == null) {
+            return null;
+        }
+        Boolean configured = scope.getBoolean(key, null);
+        if (configured != null) {
+            return configured;
+        }
+        if (!key.equals(kebabKey)) {
+            return scope.getBoolean(kebabKey, null);
         }
         return null;
     }
@@ -127,6 +159,25 @@ public record PushMfaConfig(Dpop dpop, Input input, Sse sse) {
                 return Integer.parseInt(raw.trim());
             } catch (NumberFormatException ignored) {
                 // ignore invalid config values
+            }
+        }
+        return null;
+    }
+
+    private static Boolean readSystemBoolean(String... propertyNames) {
+        for (String propertyName : propertyNames) {
+            if (propertyName == null || propertyName.isBlank()) {
+                continue;
+            }
+            String raw = System.getProperty(propertyName);
+            if (raw == null || raw.isBlank()) {
+                raw = System.getenv(toEnvVarName(propertyName));
+            }
+            if ("true".equalsIgnoreCase(raw)) {
+                return true;
+            }
+            if ("false".equalsIgnoreCase(raw)) {
+                return false;
             }
         }
         return null;

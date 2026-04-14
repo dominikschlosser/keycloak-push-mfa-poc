@@ -26,6 +26,8 @@ Content-Type: application/json
 
 Keycloak verifies the signature using `cnf.jwk`, persists the credential (JWK, deviceType, `pushProviderId`, `pushProviderType`, credentialId, deviceId, deviceLabel), and resolves the enrollment challenge. The `pushProviderId` value is whatever identifier your push backend requires (for example an FCM registration token or an APNs device token), while `pushProviderType` selects the Keycloak `PushNotificationSender` provider that should deliver the confirm token. The bundled implementations expose `log` (prints the payload) and `none` (intentionally does nothing). Your scripts use `pushProviderType=log` by default, but real deployments can plug in any provider via the [Push Notification SPI](spi-reference.md#push-notification-spi). The `deviceLabel` is read from the JWT payload (falls back to `PushMfaConstants.USER_CREDENTIAL_DISPLAY_NAME` when absent).
 
+Enrollment supports optional DPoP-bound auth as a fail-fast check for broken device DPoP generation, usually caused by severe local clock skew. Set `keycloak.push-mfa.dpop.requireForEnrollment=true` to enforce it.
+
 If two completion requests race for the same enrollment challenge, the loser may receive `409 Conflict` with `Challenge is currently being resolved` or `400 Bad Request` with `Challenge already resolved or expired`, depending on whether the competing request is still in-flight or has already finished resolving the challenge.
 
 **Response:**

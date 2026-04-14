@@ -75,6 +75,7 @@ JAVA_OPTS_APPEND="-Dkeycloak.push-mfa.input.maxJwtLength=8192 -Dkeycloak.push-mf
 | `keycloak.push-mfa.dpop.jtiTtlSeconds` | `300` | 30–3600 | How long used `jti` values are remembered |
 | `keycloak.push-mfa.dpop.jtiMaxLength` | `128` | 16–512 | Maximum `jti` string length |
 | `keycloak.push-mfa.dpop.iatToleranceSeconds` | `120` | 30–600 | Allowed clock skew for DPoP proof `iat` timestamp |
+| `keycloak.push-mfa.dpop.requireForEnrollment` | `false` | `true`/`false` | Require DPoP during enrollment instead of using it only as an optional fail-fast check |
 
 ### Input Size Limits
 

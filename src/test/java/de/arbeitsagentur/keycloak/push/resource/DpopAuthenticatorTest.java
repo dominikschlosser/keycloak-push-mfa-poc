@@ -165,7 +165,7 @@ class DpopAuthenticatorTest {
         when(uriInfo.getRequestUri()).thenReturn(URI.create(REQUEST_URI));
 
         // Create testable authenticator with default config
-        PushMfaConfig.Dpop dpopConfig = new PushMfaConfig.Dpop(300, 128, 120);
+        PushMfaConfig.Dpop dpopConfig = new PushMfaConfig.Dpop(300, 128, 120, false);
         PushMfaConfig.Input inputConfig = new PushMfaConfig.Input(16384, 128, 128, 64, 128, 128, 2048, 64, 8192);
 
         // Create access token with DPoP binding for test
@@ -721,7 +721,7 @@ class DpopAuthenticatorTest {
     @Test
     void accessTokenMissingDpopBinding() throws Exception {
         // Create authenticator with access token missing cnf claim
-        PushMfaConfig.Dpop dpopConfig = new PushMfaConfig.Dpop(300, 128, 120);
+        PushMfaConfig.Dpop dpopConfig = new PushMfaConfig.Dpop(300, 128, 120, false);
         PushMfaConfig.Input inputConfig = new PushMfaConfig.Input(16384, 128, 128, 64, 128, 128, 2048, 64, 8192);
 
         AccessToken accessTokenWithoutBinding = new AccessToken();
@@ -790,6 +790,35 @@ class DpopAuthenticatorTest {
         assertEquals("Access token DPoP binding mismatch", ex.getMessage());
     }
 
+    @Test
+    void validDpopAuthenticationAgainstProvidedPublicKey() throws Exception {
+        String dpopProof = createValidDpopProof();
+
+        when(headers.getHeaderString(HttpHeaders.AUTHORIZATION)).thenReturn("DPoP valid-token");
+        when(headers.getHeaderString("DPoP")).thenReturn(dpopProof);
+
+        DpopAuthenticator.PublicKeyAssertion result = authenticator.authenticateAgainstPublicKey(
+                headers, uriInfo, HTTP_METHOD, publicKeyJwk, USER_ID, DEVICE_ID);
+
+        assertNotNull(result);
+        assertEquals(USER_ID, result.userId());
+        assertEquals(DEVICE_ID, result.deviceId());
+    }
+
+    @Test
+    void publicKeyAuthenticationRejectsMismatchedDeviceId() throws Exception {
+        String dpopProof = createValidDpopProof();
+
+        when(headers.getHeaderString(HttpHeaders.AUTHORIZATION)).thenReturn("DPoP valid-token");
+        when(headers.getHeaderString("DPoP")).thenReturn(dpopProof);
+
+        ForbiddenException ex = assertThrows(
+                ForbiddenException.class,
+                () -> authenticator.authenticateAgainstPublicKey(
+                        headers, uriInfo, HTTP_METHOD, publicKeyJwk, USER_ID, "other-device"));
+        assertEquals("DPoP proof deviceId mismatch", ex.getMessage());
+    }
+
     // ==================== Successful Authentication Tests ====================
 
     @Test
@@ -837,7 +866,7 @@ class DpopAuthenticatorTest {
         credential.setCredentialData(toJson(differentCredentialData));
 
         // Create access token with WRONG jkt to trigger failure after credentialData is resolved
-        PushMfaConfig.Dpop dpopConfig = new PushMfaConfig.Dpop(300, 128, 120);
+        PushMfaConfig.Dpop dpopConfig = new PushMfaConfig.Dpop(300, 128, 120, false);
         PushMfaConfig.Input inputConfig = new PushMfaConfig.Input(16384, 128, 128, 64, 128, 128, 2048, 64, 8192);
 
         AccessToken badAccessToken = new AccessToken();

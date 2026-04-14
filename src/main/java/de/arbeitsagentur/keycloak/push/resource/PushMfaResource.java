@@ -133,7 +133,8 @@ public class PushMfaResource {
     @POST
     @Path("enroll/complete")
     @Consumes(MediaType.APPLICATION_JSON)
-    public Response completeEnrollment(EnrollmentCompleteRequest request) {
+    public Response completeEnrollment(
+            EnrollmentCompleteRequest request, @Context HttpHeaders headers, @Context UriInfo uriInfo) {
         if (request == null) {
             throw new BadRequestException("Request body required");
         }
@@ -183,6 +184,22 @@ public class PushMfaResource {
         KeyWrapper deviceKey = PushMfaKeyUtil.keyWrapperFromNode(jwkNode);
         PushMfaKeyUtil.ensureKeyMatchesAlgorithm(deviceKey, algorithm.name());
 
+        String deviceType = requireField(payload, "deviceType", CONFIG.input().maxDeviceTypeLength());
+        String pushProviderId =
+                requireField(payload, "pushProviderId", CONFIG.input().maxPushProviderIdLength());
+        String pushProviderType =
+                requireField(payload, "pushProviderType", CONFIG.input().maxPushProviderTypeLength());
+        String credentialId =
+                requireField(payload, "credentialId", CONFIG.input().maxDeviceCredentialIdLength());
+        String deviceId = requireField(payload, "deviceId", CONFIG.input().maxDeviceIdLength());
+
+        // Enrollment already trusts the posted `cnf.jwk`, so optional DPoP does not add
+        // security here. It exists only so clients can fail fast on broken DPoP generation,
+        // typically due to severe local clock skew, before the first login attempt.
+        if (CONFIG.dpop().requireForEnrollment() || hasEnrollmentDpopHeaders(headers)) {
+            dpopAuth.authenticateAgainstPublicKey(headers, uriInfo, "POST", jwkJson, userId, deviceId);
+        }
+
         if (!PushSignatureVerifier.verify(deviceResponse, deviceKey)) {
             PushMfaEventService.fire(
                     session,
@@ -200,11 +217,11 @@ public class PushMfaResource {
         PushCredentialData data = new PushCredentialData(
                 jwkJson,
                 Instant.now().toEpochMilli(),
-                requireField(payload, "deviceType", CONFIG.input().maxDeviceTypeLength()),
-                requireField(payload, "pushProviderId", CONFIG.input().maxPushProviderIdLength()),
-                requireField(payload, "pushProviderType", CONFIG.input().maxPushProviderTypeLength()),
-                requireField(payload, "credentialId", CONFIG.input().maxDeviceCredentialIdLength()),
-                requireField(payload, "deviceId", CONFIG.input().maxDeviceIdLength()));
+                deviceType,
+                pushProviderId,
+                pushProviderType,
+                credentialId,
+                deviceId);
 
         String labelClaim = jsonText(payload, "deviceLabel");
         String normalizedLabel =
@@ -246,6 +263,15 @@ public class PushMfaResource {
         });
 
         return Response.ok(Map.of("status", "enrolled")).build();
+    }
+
+    private static boolean hasEnrollmentDpopHeaders(HttpHeaders headers) {
+        if (headers == null) {
+            return false;
+        }
+        String authorization = headers.getHeaderString(HttpHeaders.AUTHORIZATION);
+        String dpop = headers.getHeaderString("DPoP");
+        return !StringUtil.isBlank(authorization) || !StringUtil.isBlank(dpop);
     }
 
     @GET

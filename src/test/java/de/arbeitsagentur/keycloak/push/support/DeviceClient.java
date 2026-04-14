@@ -90,6 +90,71 @@ public final class DeviceClient {
         assertEquals(200, response.statusCode(), () -> "Enrollment failed: " + response.body());
     }
 
+    public void completeEnrollmentWithDpop(String enrollmentToken) throws Exception {
+        HttpResponse<String> response = completeEnrollmentRawWithDpop(enrollmentToken);
+        assertEquals(200, response.statusCode(), () -> "Enrollment failed: " + response.body());
+    }
+
+    public HttpResponse<String> completeEnrollmentRawWithDpop(String enrollmentToken) throws Exception {
+        SignedJWT deviceToken = createEnrollmentResponseToken(enrollmentToken);
+        ensureAccessToken();
+        URI enrollUri = realmBase.resolve("push-mfa/enroll/complete");
+        String dpopProof = createDpopProof("POST", enrollUri);
+        return sendEnrollmentRequest(deviceToken.serialize(), "DPoP " + accessToken, dpopProof);
+    }
+
+    public HttpResponse<String> completeEnrollmentRawWithDpop(String enrollmentToken, Instant issuedAt)
+            throws Exception {
+        SignedJWT deviceToken = createEnrollmentResponseToken(enrollmentToken);
+        ensureAccessToken();
+        URI enrollUri = realmBase.resolve("push-mfa/enroll/complete");
+        String dpopProof =
+                createDpopProof("POST", enrollUri, issuedAt, UUID.randomUUID().toString());
+        return sendEnrollmentRequest(deviceToken.serialize(), "DPoP " + accessToken, dpopProof);
+    }
+
+    public String createEnrollmentResponseTokenJwt(String enrollmentToken) throws Exception {
+        return createEnrollmentResponseToken(enrollmentToken).serialize();
+    }
+
+    private SignedJWT createEnrollmentResponseToken(String enrollmentToken) throws Exception {
+        SignedJWT enrollment = SignedJWT.parse(enrollmentToken);
+        JWTClaimsSet claims = enrollment.getJWTClaimsSet();
+        state.setUserId(claims.getSubject());
+        JWTClaimsSet deviceClaims = new JWTClaimsSet.Builder()
+                .claim("enrollmentId", claims.getStringClaim("enrollmentId"))
+                .claim("nonce", claims.getStringClaim("nonce"))
+                .claim("sub", state.userId())
+                .claim("deviceType", "ios")
+                .claim("pushProviderId", state.pushProviderId())
+                .claim("pushProviderType", state.pushProviderType())
+                .claim("credentialId", state.deviceCredentialId())
+                .claim("deviceId", state.deviceId())
+                .claim("deviceLabel", state.deviceLabel())
+                .expirationTime(Date.from(Instant.now().plusSeconds(300)))
+                .claim("cnf", Map.of("jwk", state.signingKey().publicJwk().toJSONObject()))
+                .build();
+        return sign(deviceClaims);
+    }
+
+    public HttpResponse<String> sendEnrollmentRequest(
+            String deviceTokenJwt, String authorizationHeader, String dpopHeader) throws Exception {
+        HttpRequest.Builder request = HttpRequest.newBuilder(realmBase.resolve("push-mfa/enroll/complete"))
+                .header("Content-Type", "application/json");
+        if (authorizationHeader != null && !authorizationHeader.isBlank()) {
+            request.header("Authorization", authorizationHeader);
+        }
+        if (dpopHeader != null && !dpopHeader.isBlank()) {
+            request.header("DPoP", dpopHeader);
+        }
+        return http.send(
+                request.POST(HttpRequest.BodyPublishers.ofString(MAPPER.createObjectNode()
+                                .put("token", deviceTokenJwt)
+                                .toString()))
+                        .build(),
+                HttpResponse.BodyHandlers.ofString());
+    }
+
     public void respondToChallenge(String confirmToken, String challengeId) throws Exception {
         String status = respondToChallenge(confirmToken, challengeId, PushMfaConstants.CHALLENGE_APPROVE);
         assertEquals("approved", status);
@@ -272,12 +337,16 @@ public final class DeviceClient {
     }
 
     public String createDpopProof(String method, URI uri, String jti) throws Exception {
+        return createDpopProof(method, uri, Instant.now(), jti);
+    }
+
+    public String createDpopProof(String method, URI uri, Instant issuedAt, String jti) throws Exception {
         JWTClaimsSet claims = new JWTClaimsSet.Builder()
                 .claim("htm", method)
                 .claim("htu", uri.toString())
                 .claim("sub", state.userId())
                 .claim("deviceId", state.deviceId())
-                .claim("iat", Instant.now().getEpochSecond())
+                .claim("iat", issuedAt.getEpochSecond())
                 .claim("jti", jti)
                 .build();
         DeviceSigningKey signingKey = state.signingKey();

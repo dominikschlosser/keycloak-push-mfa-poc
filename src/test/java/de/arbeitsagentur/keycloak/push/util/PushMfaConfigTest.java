@@ -31,6 +31,7 @@ class PushMfaConfigTest {
         Map<String, String> properties = Map.of(
                 "keycloak.push-mfa.input.maxJwtLength", "2048",
                 "keycloak.push-mfa.dpop.jtiMaxLength", "40",
+                "keycloak.push-mfa.dpop.requireForEnrollment", "true",
                 "keycloak.push-mfa.sse.maxConnections", "1",
                 "keycloak.push-mfa.sse.heartbeatIntervalSeconds", "20",
                 "keycloak.push-mfa.sse.maxConnectionLifetimeSeconds", "120",
@@ -40,6 +41,7 @@ class PushMfaConfigTest {
             PushMfaConfig config = PushMfaConfig.load();
             assertEquals(2048, config.input().maxJwtLength());
             assertEquals(40, config.dpop().jtiMaxLength());
+            assertEquals(true, config.dpop().requireForEnrollment());
             assertEquals(1, config.sse().maxConnections());
             assertEquals(20, config.sse().heartbeatIntervalSeconds());
             assertEquals(120, config.sse().maxConnectionLifetimeSeconds());
@@ -66,6 +68,14 @@ class PushMfaConfigTest {
                     BadRequestException.class,
                     () -> PushMfaInputValidator.requireMaxLength(
                             oversizedJti, config.dpop().jtiMaxLength(), "jti"));
+        });
+    }
+
+    @Test
+    void enrollmentDpopEnforcementDefaultsToFalse() {
+        withSystemProperties(Map.of(), () -> {
+            PushMfaConfig config = PushMfaConfig.load();
+            assertEquals(false, config.dpop().requireForEnrollment());
         });
     }
 

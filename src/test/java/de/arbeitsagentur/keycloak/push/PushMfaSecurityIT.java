@@ -263,6 +263,45 @@ class PushMfaSecurityIT {
         }
 
         @Test
+        @DisplayName("Enrollment with authorization but missing DPoP is rejected")
+        void enrollmentWithAuthorizationButMissingDpopRejected() throws Exception {
+            adminClient.resetUserState(TEST_USERNAME);
+            DeviceClient device = new DeviceClient(baseUri, DeviceState.create(DeviceKeyType.RSA));
+            BrowserSession session = new BrowserSession(baseUri);
+            HtmlPage loginPage = session.startAuthorization("test-app");
+            HtmlPage enrollPage = session.submitLogin(loginPage, TEST_USERNAME, TEST_PASSWORD);
+            String enrollmentToken = session.extractEnrollmentToken(enrollPage);
+            String deviceEnrollmentToken = device.createEnrollmentResponseTokenJwt(enrollmentToken);
+            URI enrollUri = realmUri().resolve("push-mfa/enroll/complete");
+            String accessToken = device.accessToken();
+            String dpopProof =
+                    device.createDpopProof("POST", enrollUri, UUID.randomUUID().toString());
+
+            HttpResponse<String> missingProofResponse =
+                    device.sendEnrollmentRequest(deviceEnrollmentToken, "DPoP " + accessToken, null);
+            assertEquals(401, missingProofResponse.statusCode());
+        }
+
+        @Test
+        @DisplayName("Enrollment with DPoP but no authorization is rejected")
+        void enrollmentWithDpopButNoAuthorizationRejected() throws Exception {
+            adminClient.resetUserState(TEST_USERNAME);
+            DeviceClient device = new DeviceClient(baseUri, DeviceState.create(DeviceKeyType.RSA));
+            BrowserSession session = new BrowserSession(baseUri);
+            HtmlPage loginPage = session.startAuthorization("test-app");
+            HtmlPage enrollPage = session.submitLogin(loginPage, TEST_USERNAME, TEST_PASSWORD);
+            String enrollmentToken = session.extractEnrollmentToken(enrollPage);
+            String deviceEnrollmentToken = device.createEnrollmentResponseTokenJwt(enrollmentToken);
+            URI enrollUri = realmUri().resolve("push-mfa/enroll/complete");
+            String dpopProof =
+                    device.createDpopProof("POST", enrollUri, UUID.randomUUID().toString());
+
+            HttpResponse<String> missingTokenResponse =
+                    device.sendEnrollmentRequest(deviceEnrollmentToken, null, dpopProof);
+            assertEquals(401, missingTokenResponse.statusCode());
+        }
+
+        @Test
         @DisplayName("DPoP with wrong HTTP method rejected")
         void dpopWithWrongMethodRejected() throws Exception {
             DeviceClient device = enrollDeviceWithRetry(TEST_USERNAME, TEST_PASSWORD);
@@ -327,6 +366,22 @@ class PushMfaSecurityIT {
 
             assertTrue(response.statusCode() >= 400, "Malformed JSON should be rejected");
             assertTrue(duration < 5000, "Malformed JSON should be rejected quickly");
+        }
+
+        @Test
+        @DisplayName("Enrollment optional DPoP fails when proof is expired")
+        void enrollmentOptionalDpopExpiredRejected() throws Exception {
+            adminClient.resetUserState(TEST_USERNAME);
+            DeviceClient device = new DeviceClient(baseUri, DeviceState.create(DeviceKeyType.RSA));
+            BrowserSession session = new BrowserSession(baseUri);
+            HtmlPage loginPage = session.startAuthorization("test-app");
+            HtmlPage enrollPage = session.submitLogin(loginPage, TEST_USERNAME, TEST_PASSWORD);
+            String enrollmentToken = session.extractEnrollmentToken(enrollPage);
+
+            HttpResponse<String> response = device.completeEnrollmentRawWithDpop(
+                    enrollmentToken, Instant.now().minusSeconds(150));
+
+            assertEquals(400, response.statusCode(), "Expired optional DPoP proof should be rejected");
         }
     }
 
