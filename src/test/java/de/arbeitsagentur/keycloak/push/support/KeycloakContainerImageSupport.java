@@ -28,9 +28,9 @@ public final class KeycloakContainerImageSupport {
     private KeycloakContainerImageSupport() {}
 
     public static Future<String> image() {
-        return new ImageFromDockerfile()
+        String keycloakVersion = System.getProperty("test.keycloak.version", DEFAULT_KEYCLOAK_VERSION);
+        return new ImageFromDockerfile("keycloak-push-mfa-java25-test:" + keycloakVersion, false)
                 .withDockerfile(DOCKERFILE)
-                .withBuildArg(
-                        "KEYCLOAK_VERSION", System.getProperty("test.keycloak.version", DEFAULT_KEYCLOAK_VERSION));
+                .withBuildArg("KEYCLOAK_VERSION", keycloakVersion);
     }
 }
