@@ -2,7 +2,7 @@ version: "3.8"
 
 services:
   keycloak:
-    image: quay.io/keycloak/keycloak:${KEYCLOAK_VERSION:-26.5.4}
+    image: quay.io/keycloak/keycloak:${KEYCLOAK_VERSION:-26.6.1}
     command:
       - start-dev
       - --debug

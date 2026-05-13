@@ -20,7 +20,7 @@ import org.testcontainers.utility.DockerImageName;
 
 public final class KeycloakContainerImageSupport {
 
-    private static final String DEFAULT_KEYCLOAK_VERSION = "26.5.4";
+    private static final String DEFAULT_KEYCLOAK_VERSION = "26.6.1";
     private static final String DEFAULT_KEYCLOAK_IMAGE = "quay.io/keycloak/keycloak";
 
     private KeycloakContainerImageSupport() {}
